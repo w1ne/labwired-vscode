@@ -1,0 +1,150 @@
+:root {
+    --bg-color: var(--vscode-editor-background);
+    --grid-color: rgba(63, 162, 255, 0.05);
+    --mcu-color: var(--vscode-charts-blue);
+    --device-color: var(--vscode-charts-green);
+    --wire-color: var(--vscode-descriptionForeground);
+    --accent: var(--vscode-charts-blue);
+    --text-color: var(--vscode-editor-foreground);
+    --hud-bg: var(--vscode-sideBarSectionHeader-background);
+}
+
+body {
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    margin: 0;
+    overflow: hidden;
+    font-family: 'Inter', 'Segoe UI', sans-serif;
+    background-image:
+        linear-gradient(var(--grid-color) 1px, transparent 1px),
+        linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
+    background-size: 40px 40px;
+}
+
+.topology-viewer {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+}
+
+.hud-header {
+    background: var(--hud-bg);
+    padding: 15px 25px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-bottom: 1px solid var(--vscode-sideBar-border);
+    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+    z-index: 100;
+}
+
+h1 {
+    font-size: 18px;
+    margin: 0;
+    letter-spacing: 2px;
+    font-weight: 800;
+    color: var(--accent);
+}
+
+.chip-badge {
+    font-size: 10px;
+    background: var(--accent);
+    color: var(--bg-color);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-weight: 900;
+}
+
+.metrics-overlay {
+    display: flex;
+    gap: 30px;
+}
+
+.metric {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+}
+
+.metric .label {
+    font-size: 9px;
+    color: var(--vscode-descriptionForeground);
+    font-weight: bold;
+}
+
+.metric span:not(.label) {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 16px;
+    color: var(--vscode-charts-blue);
+}
+
+.viewport {
+    flex: 1;
+    position: relative;
+}
+
+.schematic {
+    width: 100%;
+    height: 100%;
+}
+
+/* SVG Styles */
+.mcu-block {
+    fill: var(--vscode-sideBarSectionHeader-background);
+    stroke: var(--mcu-color);
+    stroke-width: 3;
+    rx: 8;
+}
+
+.mcu-label {
+    fill: var(--mcu-color);
+    font-weight: 900;
+    font-size: 14px;
+}
+
+.device-block {
+    fill: var(--vscode-sideBarSectionHeader-background);
+    stroke: var(--wire-color);
+    stroke-width: 2;
+    rx: 4;
+}
+
+.device-id {
+    fill: var(--text-color);
+    font-weight: 700;
+    font-size: 12px;
+}
+
+.device-type {
+    fill: var(--vscode-descriptionForeground);
+    font-size: 10px;
+}
+
+.device-bus {
+    fill: var(--accent);
+    font-weight: 900;
+    font-size: 9px;
+}
+
+.wire-main {
+    stroke: var(--wire-color);
+    stroke-width: 1;
+    fill: none;
+    stroke-dasharray: 5, 5;
+    opacity: 0.3;
+}
+
+.data-bullet {
+    fill: var(--accent);
+    filter: drop-shadow(0 0 5px var(--accent));
+}
+
+@keyframes data-flow {
+    from {
+        stroke-dashoffset: 20;
+    }
+
+    to {
+        stroke-dashoffset: 0;
+    }
+}

@@ -17,7 +17,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.deactivate = exports.activate = exports.LabwiredDebugAdapterDescriptorFactory = exports.LabwiredConfigurationProvider = void 0;
 const vscode = require("vscode");
 const path = require("path");
-const dashboard_1 = require("./dashboard");
+const fs = require("fs");
+const commandCenter_1 = require("./commandCenter");
 const timeline_1 = require("./timeline");
 const peripheralProvider_1 = require("./peripheralProvider");
 const rtosProvider_1 = require("./rtosProvider");
@@ -27,6 +28,7 @@ const memoryInspector_1 = require("./memoryInspector");
 const traceList_1 = require("./traceList");
 const profilingPanel_1 = require("./profilingPanel");
 const simulatorManager_1 = require("./simulatorManager");
+const topologyPanel_1 = require("./topologyPanel");
 const simulatorView_1 = require("./simulatorView");
 const configWizard_1 = require("./configWizard");
 class LabwiredConfigurationProvider {
@@ -140,25 +142,8 @@ class LabwiredDebugAdapterDescriptorFactory {
                 return new vscode.DebugAdapterExecutable('docker', args);
             }
             let dapPath = config.get('dapPath');
-            // 2. Check Bundled Binary (Local Mode)
             if (!dapPath) {
-                const extPath = this.context.extensionUri.fsPath;
-                // Determine platform extension
-                const isWin = process.platform === 'win32';
-                const binName = isWin ? 'labwired-dap.exe' : 'labwired-dap';
-                // Check potential locations (dist/bin or bin)
-                const bundledPath = path.join(extPath, 'dist', 'bin', binName);
-                const devPath = path.join(extPath, 'bin', binName);
-                if (yield fileExists(bundledPath)) {
-                    dapPath = bundledPath;
-                }
-                else if (yield fileExists(devPath)) {
-                    dapPath = devPath;
-                }
-                else {
-                    // FALLBACK for Dev Environment (hardcoded for now to keep existing flow working if binary not bundled yet)
-                    dapPath = "/home/andrii/Projects/labwired/core/target/release/labwired-dap";
-                }
+                dapPath = yield findDapPath(this.context.extensionUri, this.output);
             }
             this.output.appendLine(`LabWired: Using DAP binary at ${dapPath}`);
             if (!(yield fileExists(dapPath))) {
@@ -178,35 +163,48 @@ function activate(context) {
     const simulatorManager = new simulatorManager_1.SimulatorManager(outputChannel);
     const simulatorViewProvider = new simulatorView_1.SimulatorViewProvider(simulatorManager);
     context.subscriptions.push(vscode.window.registerTreeDataProvider('labwired.simulator', simulatorViewProvider));
-    context.subscriptions.push(vscode.commands.registerCommand('labwired.startSimulator', () => __awaiter(this, void 0, void 0, function* () {
-        var _a;
-        const workspaceFolders = vscode.workspace.workspaceFolders;
-        if (!workspaceFolders)
-            return;
-        // Use default path or from settings
-        const config = vscode.workspace.getConfiguration('labwired');
-        const dapPath = config.get('dapPath') || "/home/andrii/Projects/labwired/core/target/release/labwired-dap";
-        // For simple start, we might need a program path.
-        // We'll use the last active debug config or ask for one.
-        const debugConfig = (_a = vscode.debug.activeDebugSession) === null || _a === void 0 ? void 0 : _a.configuration;
-        if (debugConfig && debugConfig.program) {
-            yield simulatorManager.start(dapPath, ["--gdb", "3333", "--firmware", debugConfig.program]);
+    context.subscriptions.push(vscode.debug.onDidStartDebugSession((session) => {
+        if (session.type === 'labwired') {
+            simulatorManager.syncDebugSessionStatus(true);
         }
-        else {
-            vscode.window.showInformationMessage("Please start a debug session first to define the firmware, or use 'Compile and Run'.");
+    }));
+    context.subscriptions.push(vscode.debug.onDidTerminateDebugSession((session) => {
+        if (session.type === 'labwired') {
+            simulatorManager.syncDebugSessionStatus(false);
+        }
+    }));
+    context.subscriptions.push(vscode.commands.registerCommand('labwired.startSimulator', () => __awaiter(this, void 0, void 0, function* () {
+        const workspaceFolders = vscode.workspace.workspaceFolders;
+        if (!workspaceFolders || workspaceFolders.length === 0)
+            return;
+        const activeSession = vscode.debug.activeDebugSession;
+        const baseConfig = (activeSession === null || activeSession === void 0 ? void 0 : activeSession.type) === 'labwired' ? activeSession.configuration : undefined;
+        const debugConfig = baseConfig
+            ? Object.assign(Object.assign({}, baseConfig), { type: 'labwired', request: 'launch' }) : {
+            name: 'LabWired: Launch',
+            type: 'labwired',
+            request: 'launch',
+            stopOnEntry: true
+        };
+        const started = yield vscode.debug.startDebugging(workspaceFolders[0], debugConfig);
+        if (!started) {
+            vscode.window.showErrorMessage('LabWired: Failed to start debug session.');
         }
     })));
-    context.subscriptions.push(vscode.commands.registerCommand('labwired.stopSimulator', () => {
-        simulatorManager.stop();
-    }));
-    context.subscriptions.push(vscode.commands.registerCommand('labwired.restartSimulator', () => __awaiter(this, void 0, void 0, function* () {
-        var _b;
-        const debugConfig = (_b = vscode.debug.activeDebugSession) === null || _b === void 0 ? void 0 : _b.configuration;
-        const config = vscode.workspace.getConfiguration('labwired');
-        const dapPath = config.get('dapPath') || "/home/andrii/Projects/labwired/core/target/release/labwired-dap";
-        if (debugConfig && debugConfig.program) {
-            yield simulatorManager.restart(dapPath, ["--gdb", "3333", "--firmware", debugConfig.program]);
+    context.subscriptions.push(vscode.commands.registerCommand('labwired.stopSimulator', () => __awaiter(this, void 0, void 0, function* () {
+        const activeSession = vscode.debug.activeDebugSession;
+        if (activeSession && activeSession.type === 'labwired') {
+            yield vscode.debug.stopDebugging(activeSession);
         }
+        simulatorManager.stop();
+    })));
+    context.subscriptions.push(vscode.commands.registerCommand('labwired.restartSimulator', () => __awaiter(this, void 0, void 0, function* () {
+        const activeSession = vscode.debug.activeDebugSession;
+        if (activeSession && activeSession.type === 'labwired') {
+            yield vscode.commands.executeCommand('workbench.action.debug.restart');
+            return;
+        }
+        yield vscode.commands.executeCommand('labwired.startSimulator');
     })));
     context.subscriptions.push(vscode.commands.registerCommand('labwired.configureProject', () => __awaiter(this, void 0, void 0, function* () {
         yield (0, configWizard_1.showConfigWizard)();
@@ -216,12 +214,17 @@ function activate(context) {
         const { importSvdWizard } = require('./configWizard');
         yield importSvdWizard();
     })));
-    const dashboardProvider = new dashboard_1.LabwiredDashboardProvider(context.extensionUri);
-    context.subscriptions.push(vscode.window.registerWebviewViewProvider(dashboard_1.LabwiredDashboardProvider.viewType, dashboardProvider));
+    const commandCenterProvider = new commandCenter_1.LabwiredCommandCenterProvider(context.extensionUri);
+    context.subscriptions.push(vscode.window.registerWebviewViewProvider(commandCenter_1.LabwiredCommandCenterProvider.viewType, commandCenterProvider));
+    context.subscriptions.push(simulatorManager.onStatusChanged((status) => {
+        commandCenterProvider.updateStatus(status);
+    }));
     // Timeline Panel
     const timelinePanel = new timeline_1.TimelinePanel(context);
     context.subscriptions.push(vscode.commands.registerCommand('labwired.showTimeline', () => {
         timelinePanel.show();
+    }), vscode.commands.registerCommand('labwired.showTopology', () => {
+        topologyPanel_1.SystemTopologyPanel.createOrShow(context.extensionUri);
     }));
     // Peripheral Tree View
     const peripheralProvider = new peripheralProvider_1.PeripheralProvider();
@@ -257,7 +260,11 @@ function activate(context) {
     context.subscriptions.push(vscode.debug.onDidReceiveDebugSessionCustomEvent(e => {
         if (e.session.type === 'labwired') {
             if (e.event === 'telemetry') {
-                dashboardProvider.updateTelemetry(e.body);
+                const telemetry = Object.assign(Object.assign({}, e.body), { status: simulatorManager.status });
+                commandCenterProvider.updateTelemetry(telemetry);
+                if (topologyPanel_1.SystemTopologyPanel.currentPanel) {
+                    topologyPanel_1.SystemTopologyPanel.currentPanel.sendTelemetry(telemetry);
+                }
                 if (e.body.signals) {
                     graphingPanel.updateSignals(e.body.signals);
                 }
@@ -284,7 +291,7 @@ function activate(context) {
     // Register Compile and Run command
     context.subscriptions.push(vscode.commands.registerCommand('labwired.compileAndRun', () => __awaiter(this, void 0, void 0, function* () {
         try {
-            yield compileAndRun(outputChannel, simulatorManager);
+            yield compileAndRun(context, outputChannel, simulatorManager);
         }
         catch (e) {
             vscode.window.showErrorMessage(`LabWired: Compile and Run failed: ${e}`);
@@ -315,7 +322,7 @@ function activate(context) {
         });
     }
     context.subscriptions.push(vscode.commands.registerCommand('labwired.showDashboard', () => {
-        vscode.commands.executeCommand('labwired.dashboard.focus');
+        vscode.commands.executeCommand('labwired.commandCenter.focus');
     }));
     // Status Bar Items
     const runBtn = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 100);
@@ -326,13 +333,13 @@ function activate(context) {
     context.subscriptions.push(runBtn);
     const dashboardBtn = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Left, 99);
     dashboardBtn.command = 'labwired.showDashboard';
-    dashboardBtn.text = '$(dashboard) Dashboard';
-    dashboardBtn.tooltip = 'Show LabWired Live Dashboard';
+    dashboardBtn.text = '$(dashboard) Command Center';
+    dashboardBtn.tooltip = 'Show LabWired Command Center';
     dashboardBtn.show();
     context.subscriptions.push(dashboardBtn);
 }
 exports.activate = activate;
-function compileAndRun(outputChannel, simulatorManager) {
+function compileAndRun(context, outputChannel, simulatorManager) {
     return __awaiter(this, void 0, void 0, function* () {
         const workspaceFolders = vscode.workspace.workspaceFolders;
         if (!workspaceFolders || workspaceFolders.length === 0) {
@@ -418,14 +425,29 @@ function compileAndRun(outputChannel, simulatorManager) {
                 });
             });
         }));
-        if (!(yield fileExists(binaryPath))) {
-            throw new Error(`Could not find build artifact at ${binaryPath}.`);
-        }
         // 3. Start Simulator & Debugging
+        if (!(yield fileExists(binaryPath))) {
+            // Fallback for workspace-level target directories
+            const binName = path.basename(binaryPath);
+            const parentTarget = path.join(rootPath, '..', 'target', 'thumbv7m-none-eabi', 'debug', binName);
+            const grandParentTarget = path.join(rootPath, '..', '..', 'target', 'thumbv7m-none-eabi', 'debug', binName);
+            if (yield fileExists(parentTarget)) {
+                binaryPath = parentTarget;
+            }
+            else if (yield fileExists(grandParentTarget)) {
+                binaryPath = grandParentTarget;
+            }
+            else {
+                throw new Error(`Could not find build artifact at ${binaryPath}. Checked local and workspace target directories.`);
+            }
+        }
         vscode.window.showInformationMessage(`LabWired: Launching ${path.basename(binaryPath)}...`);
         // Start simulator in background via manager
         const config = vscode.workspace.getConfiguration('labwired');
-        const dapPath = config.get('dapPath') || "/home/andrii/Projects/labwired/core/target/release/labwired-dap";
+        let dapPath = config.get('dapPath');
+        if (!dapPath) {
+            dapPath = yield findDapPath(context.extensionUri, outputChannel);
+        }
         yield simulatorManager.start(dapPath, ["--gdb", "3333", "--firmware", binaryPath]);
         const debugConfig = {
             name: 'LabWired: Hot-Reload',
@@ -453,6 +475,68 @@ function fileExists(filePath) {
         catch (_a) {
             return false;
         }
+    });
+}
+function findDapPath(extensionUri, output) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const extPath = extensionUri.fsPath;
+        const isWin = process.platform === 'win32';
+        const binName = isWin ? 'labwired-dap.exe' : 'labwired-dap';
+        const log = (msg) => {
+            if (output)
+                output.appendLine(`LabWired [PathDiscovery]: ${msg}`);
+            console.log(`LabWired [PathDiscovery]: ${msg}`);
+        };
+        log(`Searching for DAP binary (binName: ${binName})`);
+        log(`Extension path: ${extPath}`);
+        // 1. Check Bundled/Dev Path in extension
+        const extensionPossible = [
+            path.join(extPath, 'dist', 'bin', binName),
+            path.join(extPath, 'bin', binName)
+        ];
+        for (const p of extensionPossible) {
+            log(`Checking extension folder: ${p}`);
+            if (fs.existsSync(p)) {
+                log(`Found at: ${p}`);
+                return p;
+            }
+        }
+        // 2. Search in all workspace folders and their PARENTS
+        const workspaces = vscode.workspace.workspaceFolders || [];
+        log(`Checking ${workspaces.length} workspace folders and parents...`);
+        for (const folder of workspaces) {
+            let current = folder.uri.fsPath;
+            log(`Walking up from workspace folder: ${current}`);
+            // Search up to 5 levels up for the workspace/project root
+            for (let i = 0; i < 5; i++) {
+                const searchRoots = [
+                    current,
+                    path.join(current, 'core'),
+                ];
+                for (const searchRoot of searchRoots) {
+                    const searchPaths = [
+                        path.join(searchRoot, 'target', 'release', binName),
+                        path.join(searchRoot, 'target', 'debug', binName),
+                    ];
+                    for (const p of searchPaths) {
+                        log(`[Level ${i}] Checking path: ${p}`);
+                        if (fs.existsSync(p)) {
+                            log(`Found at: ${p}`);
+                            return p;
+                        }
+                    }
+                }
+                const parent = path.dirname(current);
+                if (parent === current)
+                    break; // root reached
+                current = parent;
+            }
+        }
+        // 3. Last ditch effort: Try hardcoded path based on common dev setup if workspace root is derived
+        const workspaceRoot = path.dirname(extPath);
+        const fallback = path.join(workspaceRoot, 'core', 'target', 'release', binName);
+        log(`Not found in any workspace or parent. Using fallback: ${fallback}`);
+        return fallback;
     });
 }
 function deactivate() {

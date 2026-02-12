@@ -79,7 +79,7 @@ function showConfigWizard() {
             type: 'labwired',
             request: 'launch',
             program: vscode.workspace.asRelativePath(selectedElf.uri),
-            system: useSystem ? 'system.yaml' : undefined,
+            systemConfig: useSystem ? 'system.yaml' : undefined,
             stopOnEntry: true
         };
         yield updateLaunchConfig(workspaceFolders[0], launchConfig);

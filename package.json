@@ -35,7 +35,7 @@
                                 "description": "Path to the ELF firmware file",
                                 "default": "${workspaceFolder}/target/thumbv7m-none-eabi/debug/firmware"
                             },
-                            "system": {
+                            "systemConfig": {
                                 "type": "string",
                                 "description": "Path to the system configuration YAML (defines memory map, peripherals)",
                                 "default": "${workspaceFolder}/system.yaml"
@@ -116,7 +116,7 @@
                         "request": "launch",
                         "name": "LabWired: Launch with System Config",
                         "program": "${workspaceFolder}/target/thumbv7m-none-eabi/debug/firmware",
-                        "system": "${workspaceFolder}/system.yaml",
+                        "systemConfig": "${workspaceFolder}/system.yaml",
                         "stopOnEntry": true
                     }
                 ]
@@ -130,7 +130,12 @@
             },
             {
                 "command": "labwired.showDashboard",
-                "title": "Show Dashboard"
+                "title": "Show Command Center"
+            },
+            {
+                "command": "labwired.showTopology",
+                "title": "LabWired: Show System Topology",
+                "category": "LabWired"
             },
             {
                 "command": "labwired.showTimeline",
@@ -191,8 +196,8 @@
             "labwired": [
                 {
                     "type": "webview",
-                    "id": "labwired.dashboard",
-                    "name": "Live Dashboard",
+                    "id": "labwired.commandCenter",
+                    "name": "Command Center",
                     "icon": "$(circuit-board)"
                 },
                 {
