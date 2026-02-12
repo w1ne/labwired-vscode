@@ -1,0 +1,300 @@
+:root {
+    --bg-dark: var(--vscode-sideBar-background);
+    --card-bg: var(--vscode-sideBarSectionHeader-background);
+    --border-color: var(--vscode-sideBar-border);
+    --accent-blue: var(--vscode-charts-blue);
+    --accent-green: var(--vscode-charts-green);
+    --accent-red: var(--vscode-charts-red);
+    --text-main: var(--vscode-sideBar-foreground);
+    --text-dim: var(--vscode-descriptionForeground);
+    --glass-bg: rgba(255, 255, 255, 0.05);
+}
+
+body {
+    background-color: var(--bg-dark);
+    color: var(--text-main);
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    margin: 0;
+    padding: 0;
+    overflow-x: hidden;
+    user-select: none;
+}
+
+.command-center {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    padding: 12px;
+    box-sizing: border-box;
+}
+
+/* Telemetry HUD Overlays */
+.telemetry-bar {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 16px;
+    z-index: 10;
+}
+
+.telemetry-item {
+    flex: 1;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 10px;
+    backdrop-filter: blur(8px);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.telemetry-item:hover {
+    transform: translateY(-2px);
+    border-color: var(--accent-blue);
+}
+
+.telemetry-item .label {
+    font-size: 10px;
+    font-weight: 700;
+    color: var(--text-dim);
+    letter-spacing: 0.1em;
+    margin-bottom: 4px;
+}
+
+.telemetry-item .value {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--accent-blue);
+    text-shadow: 0 0 10px rgba(0, 162, 255, 0.3);
+}
+
+/* Board Visualization Area */
+.board-container {
+    flex: 1;
+    min-height: 200px;
+    position: relative;
+    background: radial-gradient(circle at center, var(--accent-blue) 0%, transparent 85%);
+    background-blend-mode: overlay;
+    border-radius: 8px;
+    border: 1px solid var(--border-color);
+    margin-bottom: 12px;
+    overflow: hidden;
+}
+
+#board-root {
+    width: 100%;
+    height: 100%;
+}
+
+.mcu-chip {
+    position: absolute;
+    width: 80px;
+    height: 80px;
+    background: linear-gradient(135deg, #161b22 0%, #0d1117 100%);
+    border: 2px solid var(--accent-blue);
+    border-radius: 4px;
+    transform: translate(-50%, -50%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: white;
+    font-weight: bold;
+    font-size: 12px;
+    z-index: 5;
+    box-shadow: 0 0 20px rgba(0, 162, 255, 0.2);
+    text-align: center;
+    padding: 4px;
+}
+
+.mcu-glow {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    background: var(--accent-blue);
+    filter: blur(15px);
+    opacity: 0.1;
+    animation: heartbeat 3s infinite;
+}
+
+@keyframes heartbeat {
+    0% {
+        transform: scale(1);
+        opacity: 0.1;
+    }
+
+    50% {
+        transform: scale(1.1);
+        opacity: 0.2;
+    }
+
+    100% {
+        transform: scale(1);
+        opacity: 0.1;
+    }
+}
+
+.peripheral-chip {
+    position: absolute;
+    min-width: 60px;
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 6px 8px;
+    z-index: 5;
+    text-align: center;
+    backdrop-filter: blur(4px);
+    transform: translate(-50%, -50%);
+    transition: transform 0.3s ease;
+}
+
+.peripheral-chip:hover {
+    transform: translate(-50%, -50%) scale(1.1);
+    border-color: var(--accent-green);
+}
+
+.peripheral-chip .chip-id {
+    font-size: 10px;
+    font-weight: bold;
+    color: var(--text-main);
+}
+
+.peripheral-chip .chip-type {
+    font-size: 8px;
+    color: var(--text-dim);
+}
+
+/* SVG Connections */
+.connection {
+    stroke: var(--accent-blue);
+    stroke-width: 1.5;
+    stroke-dasharray: 4 2;
+    opacity: 0.4;
+    transition: opacity 0.3s;
+}
+
+.pulse-dot {
+    fill: var(--accent-blue);
+    filter: drop-shadow(0 0 4px var(--accent-blue));
+}
+
+/* Info Panel */
+.info-panel {
+    background: var(--card-bg);
+    border: 1px solid var(--border-color);
+    border-radius: 12px;
+    padding: 16px;
+}
+
+.system-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+h2 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-main);
+}
+
+.badge {
+    font-size: 10px;
+    padding: 2px 8px;
+    border-radius: 20px;
+    font-weight: 700;
+    text-transform: uppercase;
+}
+
+.badge.live {
+    background: rgba(63, 185, 80, 0.1);
+    color: var(--accent-green);
+    border: 1px solid rgba(63, 185, 80, 0.3);
+}
+
+.badge.stopped {
+    background: rgba(248, 81, 73, 0.1);
+    color: var(--accent-red);
+    border: 1px solid rgba(248, 81, 73, 0.3);
+}
+
+#chip-name {
+    margin: 0 0 12px 0;
+    font-size: 12px;
+    color: var(--text-dim);
+}
+
+.device-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.device-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--glass-bg);
+    padding: 8px 12px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+    transition: all 0.2s;
+}
+
+.device-item:hover {
+    background: rgba(255, 255, 255, 0.06);
+    border-color: var(--accent-blue);
+}
+
+.device-id {
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.device-type {
+    font-size: 10px;
+    color: var(--text-dim);
+    margin-left: 6px;
+}
+
+.device-bus {
+    font-size: 10px;
+    font-weight: 900;
+    color: var(--accent-blue);
+}
+
+.action-bar {
+    margin-top: 12px;
+    display: flex;
+    justify-content: center;
+}
+
+.btn-primary {
+    background: var(--vscode-button-background);
+    color: var(--vscode-button-foreground);
+    border: none;
+    padding: 6px 12px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    width: 100%;
+}
+
+.btn-primary:hover {
+    background: var(--vscode-button-hoverBackground);
+}
+
+.loading {
+    display: flex;
+    height: 100%;
+    align-items: center;
+    justify-content: center;
+    color: var(--text-dim);
+    font-style: italic;
+    font-size: 12px;
+}

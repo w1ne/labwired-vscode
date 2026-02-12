@@ -85,4 +85,16 @@ export class SimulatorManager {
         this.stop();
         return this.start(binaryPath, args);
     }
+
+    public syncDebugSessionStatus(isRunning: boolean): void {
+        if (this.process) {
+            // When we own a process, process lifecycle remains authoritative.
+            return;
+        }
+
+        const next = isRunning ? SimulatorStatus.Running : SimulatorStatus.Stopped;
+        if (this._status !== next) {
+            this.status = next;
+        }
+    }
 }

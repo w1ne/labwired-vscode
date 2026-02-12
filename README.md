@@ -3,6 +3,8 @@
 Official VS Code extension for the **LabWired Firmware Simulation Platform**.
 
 ## Features
+*   **Command Center**: Live telemetry + board overview from `system.yaml`.
+*   **Topology View**: Expanded system topology rendering for MCU and peripherals.
 *   **Timeline View**: Visualize execution history (PC, Interrupts) over time.
 *   **Register Inspector**: View and modify peripheral registers with bit-field expansion.
 *   **Memory View**: Inspect and edit memory in Hex/ASCII.
