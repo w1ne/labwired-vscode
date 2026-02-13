@@ -2,6 +2,28 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 
+type ParsedExternalDevice = {
+    id: string;
+    type?: string;
+    connection?: string;
+};
+
+type ParsedBoardIo = {
+    id: string;
+    kind?: string;
+    peripheral?: string;
+    pin?: number;
+    signal?: string;
+    active_high?: boolean;
+};
+
+type ParsedSystemYaml = {
+    name: string;
+    chip: string;
+    devices: ParsedExternalDevice[];
+    board_io: ParsedBoardIo[];
+};
+
 export class LabwiredCommandCenterProvider implements vscode.WebviewViewProvider {
     public static readonly viewType = 'labwired.commandCenter';
     private _view?: vscode.WebviewView;
@@ -99,7 +121,8 @@ export class LabwiredCommandCenterProvider implements vscode.WebviewViewProvider
                 boardData = {
                     name: 'No System Loaded',
                     chip: 'Unknown MCU',
-                    devices: []
+                    devices: [],
+                    board_io: []
                 };
             }
 
@@ -109,36 +132,124 @@ export class LabwiredCommandCenterProvider implements vscode.WebviewViewProvider
         }
     }
 
-    private _parseSimpleYaml(content: string): any {
+    private _parseSimpleYaml(content: string): ParsedSystemYaml {
         const lines = content.split('\n');
-        const data: any = {
+        const data: ParsedSystemYaml = {
             name: 'Generic Board',
             chip: 'Unknown MCU',
-            devices: []
+            devices: [],
+            board_io: []
         };
 
-        let currentDevice: any = null;
+        let currentDevice: ParsedExternalDevice | null = null;
+        let currentBoardIo: ParsedBoardIo | null = null;
+        let section: 'root' | 'external_devices' | 'board_io' = 'root';
 
-        for (const line of lines) {
-            const trimmed = line.trim();
+        const flushDevice = () => {
+            if (currentDevice) {
+                data.devices.push(currentDevice);
+                currentDevice = null;
+            }
+        };
+
+        const flushBoardIo = () => {
+            if (currentBoardIo) {
+                data.board_io.push(currentBoardIo);
+                currentBoardIo = null;
+            }
+        };
+
+        const parseValue = (raw: string): string | number | boolean => {
+            const value = raw.trim().replace(/^["']|["']$/g, '');
+            if (value === 'true') return true;
+            if (value === 'false') return false;
+            if (/^-?\d+$/.test(value)) return Number(value);
+            return value;
+        };
+
+        const parseKeyValue = (raw: string): { key: string; value: string | number | boolean } | null => {
+            const idx = raw.indexOf(':');
+            if (idx < 0) {
+                return null;
+            }
+            const key = raw.slice(0, idx).trim();
+            const value = parseValue(raw.slice(idx + 1));
+            return { key, value };
+        };
+
+        for (const rawLine of lines) {
+            const trimmed = rawLine.trim();
             if (!trimmed || trimmed.startsWith('#')) continue;
 
             if (trimmed.startsWith('name:')) {
-                data.name = trimmed.split(':')[1].trim().replace(/"/g, '');
+                const kv = parseKeyValue(trimmed);
+                if (kv && typeof kv.value === 'string') {
+                    data.name = kv.value;
+                }
             } else if (trimmed.startsWith('chip:')) {
-                const chipPath = trimmed.split(':')[1].trim().replace(/"/g, '');
-                data.chip = path.basename(chipPath, '.yaml').toUpperCase();
-            } else if (trimmed.startsWith('- id:')) {
-                if (currentDevice) data.devices.push(currentDevice);
-                currentDevice = { id: trimmed.split(':')[1].trim().replace(/"/g, '') };
-            } else if (currentDevice && trimmed.startsWith('type:')) {
-                currentDevice.type = trimmed.split(':')[1].trim().replace(/"/g, '');
-            } else if (currentDevice && trimmed.startsWith('connection:')) {
-                currentDevice.connection = trimmed.split(':')[1].trim().replace(/"/g, '');
+                const kv = parseKeyValue(trimmed);
+                if (kv && typeof kv.value === 'string') {
+                    data.chip = path.basename(kv.value, '.yaml').toUpperCase();
+                }
+            } else if (trimmed === 'external_devices:') {
+                flushDevice();
+                flushBoardIo();
+                section = 'external_devices';
+            } else if (trimmed === 'board_io:') {
+                flushDevice();
+                flushBoardIo();
+                section = 'board_io';
+            } else if (section === 'external_devices') {
+                if (trimmed.startsWith('- ')) {
+                    flushDevice();
+                    const kv = parseKeyValue(trimmed.slice(2));
+                    currentDevice = { id: '' };
+                    if (kv && kv.key === 'id' && typeof kv.value === 'string') {
+                        currentDevice.id = kv.value;
+                    }
+                } else if (currentDevice) {
+                    const kv = parseKeyValue(trimmed);
+                    if (!kv) continue;
+                    if (kv.key === 'id' && typeof kv.value === 'string') {
+                        currentDevice.id = kv.value;
+                    } else if (kv.key === 'type' && typeof kv.value === 'string') {
+                        currentDevice.type = kv.value;
+                    } else if (kv.key === 'connection' && typeof kv.value === 'string') {
+                        currentDevice.connection = kv.value;
+                    }
+                }
+            } else if (section === 'board_io') {
+                if (trimmed.startsWith('- ')) {
+                    flushBoardIo();
+                    const kv = parseKeyValue(trimmed.slice(2));
+                    currentBoardIo = { id: '' };
+                    if (kv && kv.key === 'id' && typeof kv.value === 'string') {
+                        currentBoardIo.id = kv.value;
+                    }
+                } else if (currentBoardIo) {
+                    const kv = parseKeyValue(trimmed);
+                    if (!kv) continue;
+                    if (kv.key === 'id' && typeof kv.value === 'string') {
+                        currentBoardIo.id = kv.value;
+                    } else if (kv.key === 'kind' && typeof kv.value === 'string') {
+                        currentBoardIo.kind = kv.value;
+                    } else if (kv.key === 'peripheral' && typeof kv.value === 'string') {
+                        currentBoardIo.peripheral = kv.value;
+                    } else if (kv.key === 'signal' && typeof kv.value === 'string') {
+                        currentBoardIo.signal = kv.value;
+                    } else if (kv.key === 'pin' && typeof kv.value === 'number') {
+                        currentBoardIo.pin = kv.value;
+                    } else if (kv.key === 'active_high' && typeof kv.value === 'boolean') {
+                        currentBoardIo.active_high = kv.value;
+                    }
+                }
             }
         }
 
-        if (currentDevice) data.devices.push(currentDevice);
+        flushDevice();
+        flushBoardIo();
+        data.devices = data.devices.filter((dev) => dev.id.length > 0);
+        data.board_io = data.board_io.filter((io) => io.id.length > 0);
         return data;
     }
 
@@ -184,6 +295,7 @@ export class LabwiredCommandCenterProvider implements vscode.WebviewViewProvider
                         </div>
                         <p id="chip-name">MCU: -</p>
                         <div id="device-list" class="device-list"></div>
+                        <div id="board-io-list" class="board-io-list"></div>
                         
                         <div class="action-bar">
                             <button id="btn-expand" class="btn-primary">Expand to Topology View</button>
