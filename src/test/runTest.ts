@@ -3,6 +3,9 @@ import * as path from 'path';
 import { runTests } from '@vscode/test-electron';
 
 async function main() {
+    const previousElectronRunAsNode = process.env.ELECTRON_RUN_AS_NODE;
+    // In some environments this is exported globally and makes VS Code launch as plain Node.
+    delete process.env.ELECTRON_RUN_AS_NODE;
     try {
         // The folder containing the Extension Manifest package.json
         // Passed to `--extensionDevelopmentPath`
@@ -17,6 +20,12 @@ async function main() {
     } catch (err) {
         console.error('Failed to run tests');
         process.exit(1);
+    } finally {
+        if (previousElectronRunAsNode === undefined) {
+            delete process.env.ELECTRON_RUN_AS_NODE;
+        } else {
+            process.env.ELECTRON_RUN_AS_NODE = previousElectronRunAsNode;
+        }
     }
 }
 
