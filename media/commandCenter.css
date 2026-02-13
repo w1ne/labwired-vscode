@@ -116,24 +116,6 @@ body {
     background: var(--accent-blue);
     filter: blur(15px);
     opacity: 0.1;
-    animation: heartbeat 3s infinite;
-}
-
-@keyframes heartbeat {
-    0% {
-        transform: scale(1);
-        opacity: 0.1;
-    }
-
-    50% {
-        transform: scale(1.1);
-        opacity: 0.2;
-    }
-
-    100% {
-        transform: scale(1);
-        opacity: 0.1;
-    }
 }
 
 .peripheral-chip {
@@ -234,6 +216,15 @@ h2 {
     gap: 8px;
 }
 
+.section-title {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: var(--text-dim);
+    margin-top: 12px;
+    text-transform: uppercase;
+}
+
 .device-item {
     display: flex;
     justify-content: space-between;
@@ -265,6 +256,90 @@ h2 {
     font-size: 10px;
     font-weight: 900;
     color: var(--accent-blue);
+}
+
+.board-io-list {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.board-io-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--glass-bg);
+    padding: 8px 12px;
+    border-radius: 6px;
+    border: 1px solid transparent;
+}
+
+.board-io-item:hover {
+    border-color: var(--accent-blue);
+}
+
+.board-io-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.board-io-id {
+    font-size: 12px;
+    font-weight: 600;
+}
+
+.board-io-path {
+    font-size: 10px;
+    color: var(--text-dim);
+}
+
+.board-io-state {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.board-io-chip {
+    font-size: 9px;
+    font-weight: 700;
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    padding: 2px 6px;
+    color: var(--text-dim);
+}
+
+.board-io-chip.led {
+    color: var(--accent-blue);
+}
+
+.board-io-chip.button {
+    color: var(--accent-green);
+}
+
+.board-io-level {
+    font-size: 10px;
+    font-weight: 800;
+    border-radius: 999px;
+    padding: 2px 8px;
+    border: 1px solid transparent;
+}
+
+.board-io-level.on {
+    color: var(--accent-green);
+    border-color: rgba(63, 185, 80, 0.3);
+    background: rgba(63, 185, 80, 0.12);
+}
+
+.board-io-level.off {
+    color: var(--text-dim);
+    border-color: var(--border-color);
+    background: rgba(127, 127, 127, 0.08);
+}
+
+.board-io-level.unknown {
+    color: var(--text-dim);
+    border-color: var(--border-color);
 }
 
 .action-bar {

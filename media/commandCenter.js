@@ -10,6 +10,9 @@
     const boardName = document.getElementById('board-name');
     const chipName = document.getElementById('chip-name');
     const deviceList = document.getElementById('device-list');
+    const boardIoList = document.getElementById('board-io-list');
+    const boardIoStateElements = new Map();
+    const boardIoById = new Map();
 
     window.addEventListener('message', event => {
         const message = event.data;
@@ -27,9 +30,13 @@
     });
 
     function updateTelemetry(data) {
-        if (mipsEl) mipsEl.textContent = data.mips.toFixed(2);
-        if (cyclesEl) cyclesEl.textContent = data.cycles.toLocaleString();
-        if (pcEl) pcEl.textContent = `0x${data.pc.toString(16).toUpperCase().padStart(8, '0')}`;
+        if (mipsEl && typeof data.mips === 'number') mipsEl.textContent = data.mips.toFixed(2);
+        if (cyclesEl && typeof data.cycles === 'number') cyclesEl.textContent = data.cycles.toLocaleString();
+        if (pcEl && typeof data.pc === 'number') pcEl.textContent = `0x${data.pc.toString(16).toUpperCase().padStart(8, '0')}`;
+
+        if (Array.isArray(data.board_io)) {
+            updateBoardIoStates(data.board_io);
+        }
 
         updateStatusBadge(data.status);
     }
@@ -44,6 +51,7 @@
     function renderBoard(data) {
         boardName.innerText = data.name || 'Generic Board';
         chipName.innerText = `MCU: ${data.chip || 'Unknown'}`;
+        renderBoardIo(data.board_io || []);
 
         // Clear root
         boardRoot.innerHTML = '';
@@ -117,6 +125,64 @@
                 }
             });
         });
+    }
+
+    function renderBoardIo(boardIo) {
+        if (!boardIoList) return;
+
+        boardIoList.innerHTML = '';
+        boardIoStateElements.clear();
+        boardIoById.clear();
+
+        if (!Array.isArray(boardIo) || boardIo.length === 0) {
+            return;
+        }
+
+        const title = document.createElement('div');
+        title.className = 'section-title';
+        title.textContent = 'Board IO';
+        boardIoList.appendChild(title);
+
+        boardIo.forEach((io) => {
+            const row = document.createElement('div');
+            row.className = 'board-io-item';
+            row.innerHTML = `
+                <div class="board-io-meta">
+                    <span class="board-io-id">${io.id || 'io'}</span>
+                    <span class="board-io-path">${(io.peripheral || '?').toUpperCase()}${typeof io.pin === 'number' ? `[${io.pin}]` : ''}</span>
+                </div>
+                <div class="board-io-state">
+                    <span class="board-io-chip ${String(io.kind || '').toLowerCase()}">${String(io.kind || 'io').toUpperCase()}</span>
+                    <span class="board-io-level unknown">-</span>
+                </div>
+            `;
+            boardIoList.appendChild(row);
+
+            const level = row.querySelector('.board-io-level');
+            if (level && io.id) {
+                boardIoStateElements.set(io.id, level);
+                boardIoById.set(io.id, io);
+            }
+        });
+    }
+
+    function updateBoardIoStates(states) {
+        states.forEach((state) => {
+            if (!state || !state.id) return;
+            const level = boardIoStateElements.get(state.id);
+            if (!level) return;
+            const config = boardIoById.get(state.id) || state;
+            setBoardIoLevel(level, config.kind, Boolean(state.active));
+        });
+    }
+
+    function setBoardIoLevel(levelEl, kind, active) {
+        const kindName = String(kind || '').toLowerCase();
+        const onText = kindName === 'button' ? 'PRESSED' : 'ON';
+        const offText = kindName === 'button' ? 'RELEASED' : 'OFF';
+        levelEl.textContent = active ? onText : offText;
+        levelEl.classList.remove('unknown', 'on', 'off');
+        levelEl.classList.add(active ? 'on' : 'off');
     }
 
     document.getElementById('btn-expand')?.addEventListener('click', () => {
