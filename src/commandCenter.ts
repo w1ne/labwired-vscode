@@ -28,9 +28,14 @@ export class LabwiredCommandCenterProvider implements vscode.WebviewViewProvider
     public static readonly viewType = 'labwired.commandCenter';
     private _view?: vscode.WebviewView;
     private _latestStatus = 'Stopped';
+    private _webviewReady = false;
+    private _pendingUartActivity = false;
+    private _pendingUartChunks: string[] = [];
+    private static readonly MAX_PENDING_UART_CHUNKS = 64;
 
     constructor(
         private readonly _extensionUri: vscode.Uri,
+        private readonly _demoUiEnabled: boolean,
     ) { }
 
     public resolveWebviewView(
@@ -45,9 +50,17 @@ export class LabwiredCommandCenterProvider implements vscode.WebviewViewProvider
                 case 'openTopology':
                     vscode.commands.executeCommand('labwired.showTopology');
                     break;
+                case 'openOutput':
+                    vscode.commands.executeCommand('workbench.action.output.toggleOutput');
+                    break;
+                case 'configureProject':
+                    vscode.commands.executeCommand('labwired.configureProject');
+                    break;
                 case 'ready':
+                    this._webviewReady = true;
                     this.updateBoard();
                     this.updateStatus(this._latestStatus);
+                    this.flushPendingUart();
                     break;
             }
         });
@@ -67,6 +80,7 @@ export class LabwiredCommandCenterProvider implements vscode.WebviewViewProvider
         watcher.onDidCreate(() => this.updateBoard());
 
         webviewView.onDidDispose(() => {
+            this._webviewReady = false;
             watcher.dispose();
         });
 
@@ -94,6 +108,59 @@ export class LabwiredCommandCenterProvider implements vscode.WebviewViewProvider
         }
     }
 
+    public appendUartOutput(output: string) {
+        if (typeof output !== 'string' || output.length === 0) {
+            return;
+        }
+
+        if (this._pendingUartChunks.length >= LabwiredCommandCenterProvider.MAX_PENDING_UART_CHUNKS) {
+            this._pendingUartChunks.shift();
+        }
+        this._pendingUartChunks.push(output);
+
+        if (!this._demoUiEnabled || !this._view || !this._webviewReady) {
+            return;
+        }
+        this._view.webview.postMessage({ type: 'uart', output });
+    }
+
+    public clearUartOutput() {
+        this._pendingUartChunks = [];
+        this._pendingUartActivity = false;
+        if (this._demoUiEnabled && this._view && this._webviewReady) {
+            this._view.webview.postMessage({ type: 'uartReset' });
+        }
+    }
+
+    public markUartActivity() {
+        this._pendingUartActivity = true;
+        if (!this._view || !this._webviewReady) {
+            return;
+        }
+        this._view.webview.postMessage({ type: 'uartActivity' });
+        this._pendingUartActivity = false;
+    }
+
+    private flushPendingUart() {
+        if (!this._view || !this._webviewReady) {
+            return;
+        }
+
+        if (this._pendingUartActivity) {
+            this._view.webview.postMessage({ type: 'uartActivity' });
+            this._pendingUartActivity = false;
+        }
+
+        if (!this._demoUiEnabled || this._pendingUartChunks.length === 0) {
+            return;
+        }
+
+        for (const chunk of this._pendingUartChunks) {
+            this._view.webview.postMessage({ type: 'uart', output: chunk });
+        }
+        this._pendingUartChunks = [];
+    }
+
     public async updateBoard() {
         if (!this._view) return;
 
@@ -102,11 +169,20 @@ export class LabwiredCommandCenterProvider implements vscode.WebviewViewProvider
 
         const rootPath = workspaceFolders[0].uri.fsPath;
         const systemYamlPath = path.join(rootPath, 'system.yaml');
+        const activeSystemConfig = (() => {
+            const session = vscode.debug.activeDebugSession;
+            if (!session || session.type !== 'labwired') return undefined;
+            const cfgPath = session.configuration?.systemConfig;
+            return typeof cfgPath === 'string' ? cfgPath : undefined;
+        })();
 
         try {
             let boardData: any | undefined;
 
-            if (fs.existsSync(systemYamlPath)) {
+            if (activeSystemConfig && fs.existsSync(activeSystemConfig)) {
+                const content = fs.readFileSync(activeSystemConfig, 'utf8');
+                boardData = this._parseSimpleYaml(content);
+            } else if (fs.existsSync(systemYamlPath)) {
                 const content = fs.readFileSync(systemYamlPath, 'utf8');
                 boardData = this._parseSimpleYaml(content);
             } else {
@@ -189,13 +265,13 @@ export class LabwiredCommandCenterProvider implements vscode.WebviewViewProvider
             } else if (trimmed.startsWith('chip:')) {
                 const kv = parseKeyValue(trimmed);
                 if (kv && typeof kv.value === 'string') {
-                    data.chip = path.basename(kv.value, '.yaml').toUpperCase();
+                    data.chip = path.basename(kv.value).replace(/\.ya?ml$/i, '').toUpperCase();
                 }
-            } else if (trimmed === 'external_devices:') {
+            } else if (trimmed.startsWith('external_devices:')) {
                 flushDevice();
                 flushBoardIo();
                 section = 'external_devices';
-            } else if (trimmed === 'board_io:') {
+            } else if (trimmed.startsWith('board_io:')) {
                 flushDevice();
                 flushBoardIo();
                 section = 'board_io';
@@ -256,6 +332,19 @@ export class LabwiredCommandCenterProvider implements vscode.WebviewViewProvider
     private _getHtmlForWebview(webview: vscode.Webview) {
         const scriptUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'commandCenter.js'));
         const styleUri = webview.asWebviewUri(vscode.Uri.joinPath(this._extensionUri, 'media', 'commandCenter.css'));
+        const demoHudHtml = this._demoUiEnabled ? `
+                        <div class="telemetry-item">
+                            <span class="label">STATE</span>
+                            <span id="hud-status" class="value">STOPPED</span>
+                        </div>` : '';
+        const uartPanelHtml = this._demoUiEnabled ? `
+                        <div class="section-title">Live UART</div>
+                        <div class="uart-panel">
+                            <pre id="uart-output" class="uart-output">Waiting for UART...</pre>
+                            <div class="uart-actions">
+                                <button id="btn-clear-uart" class="btn-secondary">Clear UART</button>
+                            </div>
+                        </div>` : '';
 
         return `<!DOCTYPE html>
             <html lang="en">
@@ -268,6 +357,7 @@ export class LabwiredCommandCenterProvider implements vscode.WebviewViewProvider
             <body>
                 <div class="command-center">
                     <div id="telemetry-bar" class="telemetry-bar">
+${demoHudHtml}
                         <div class="telemetry-item">
                             <span class="label">MIPS</span>
                             <span id="mips-value" class="value">0.00</span>
@@ -296,6 +386,15 @@ export class LabwiredCommandCenterProvider implements vscode.WebviewViewProvider
                         <p id="chip-name">MCU: -</p>
                         <div id="device-list" class="device-list"></div>
                         <div id="board-io-list" class="board-io-list"></div>
+
+                        <div class="section-title">Health & Issues</div>
+                        <div id="health-list" class="health-list"></div>
+                        <div class="health-actions">
+                            <button id="btn-open-output" class="btn-secondary">Open Output</button>
+                            <button id="btn-configure-project" class="btn-secondary">Configure Project</button>
+                        </div>
+
+${uartPanelHtml}
                         
                         <div class="action-bar">
                             <button id="btn-expand" class="btn-primary">Expand to Topology View</button>

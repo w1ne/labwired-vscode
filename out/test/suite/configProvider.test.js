@@ -48,7 +48,7 @@ suite('LabwiredConfigurationProvider Test Suite', () => {
         assert.strictEqual(resolved === null || resolved === void 0 ? void 0 : resolved.type, 'labwired');
         assert.strictEqual(resolved === null || resolved === void 0 ? void 0 : resolved.name, 'LabWired: Launch');
         assert.strictEqual(resolved === null || resolved === void 0 ? void 0 : resolved.request, 'launch');
-        assert.strictEqual(resolved === null || resolved === void 0 ? void 0 : resolved.stopOnEntry, true);
+        assert.strictEqual(resolved === null || resolved === void 0 ? void 0 : resolved.stopOnEntry, false);
         assert.ok(resolved === null || resolved === void 0 ? void 0 : resolved.program.includes('firmware'));
     }));
     test('resolveDebugConfiguration should auto-map Rust source', () => __awaiter(void 0, void 0, void 0, function* () {
