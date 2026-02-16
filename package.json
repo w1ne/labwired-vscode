@@ -1,7 +1,7 @@
 {
     "name": "labwired-vscode",
     "displayName": "LabWired Debugger",
-    "version": "0.11.1",
+    "version": "0.12.1",
     "license": "MIT",
     "publisher": "w1ne",
     "description": "LabWired Debug Adapter for VS Code",
@@ -18,6 +18,21 @@
         "workspaceContains:**/Makefile"
     ],
     "contributes": {
+        "configuration": {
+            "title": "LabWired",
+            "properties": {
+                "labwired.demoUi.mode": {
+                    "type": "string",
+                    "enum": [
+                        "auto",
+                        "off",
+                        "on"
+                    ],
+                    "default": "auto",
+                    "description": "Demo-only Command Center HUD/UART widgets. 'auto' enables in development mode and disables in production installs."
+                }
+            }
+        },
         "debuggers": [
             {
                 "type": "labwired",
