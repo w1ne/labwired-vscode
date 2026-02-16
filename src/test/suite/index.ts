@@ -9,10 +9,12 @@ export function run(): Promise<void> {
         color: true
     });
 
-    const testsRoot = path.resolve(__dirname, '..');
+    // Only load extension-host suite tests from this directory.
+    // Unit tests under ../unit are executed separately via npm script/CI step.
+    const testsRoot = path.resolve(__dirname);
 
     return new Promise((resolve, reject) => {
-        glob('**/**.test.js', { cwd: testsRoot }, (err: any, files: string[]) => {
+        glob('**/*.test.js', { cwd: testsRoot }, (err: any, files: string[]) => {
             if (err) {
                 return reject(err);
             }

@@ -78,28 +78,117 @@ class SystemTopologyPanel {
         });
     }
     _parseYaml(content) {
-        // More robust parser than the simple one in commandCenter
-        const data = { name: 'Board', chip: 'MCU', devices: [] };
+        const data = { name: 'Board', chip: 'MCU', devices: [], board_io: [] };
         let currentDevice = null;
+        let currentBoardIo = null;
+        let section = 'root';
         const lines = content.split('\n');
+        const parseValue = (raw) => {
+            const value = raw.trim().replace(/^["']|["']$/g, '');
+            if (value === 'true')
+                return true;
+            if (value === 'false')
+                return false;
+            if (/^-?\d+$/.test(value))
+                return Number(value);
+            return value;
+        };
+        const parseKeyValue = (raw) => {
+            const idx = raw.indexOf(':');
+            if (idx < 0)
+                return null;
+            const key = raw.slice(0, idx).trim();
+            const value = parseValue(raw.slice(idx + 1));
+            return { key, value };
+        };
+        const flushDevice = () => {
+            if (currentDevice && typeof currentDevice.id === 'string' && currentDevice.id.length > 0) {
+                data.devices.push(currentDevice);
+            }
+            currentDevice = null;
+        };
+        const flushBoardIo = () => {
+            if (currentBoardIo && typeof currentBoardIo.id === 'string' && currentBoardIo.id.length > 0) {
+                data.board_io.push(currentBoardIo);
+            }
+            currentBoardIo = null;
+        };
         for (const line of lines) {
             const trimmed = line.trim();
-            if (trimmed.startsWith('name:'))
-                data.name = trimmed.split(':')[1].trim().replace(/"/g, '');
-            else if (trimmed.startsWith('chip:'))
-                data.chip = path.basename(trimmed.split(':')[1].trim(), '.yaml').toUpperCase();
-            else if (trimmed.startsWith('- id:')) {
-                if (currentDevice)
-                    data.devices.push(currentDevice);
-                currentDevice = { id: trimmed.split(':')[1].trim().replace(/"/g, '') };
+            if (!trimmed || trimmed.startsWith('#'))
+                continue;
+            if (trimmed.startsWith('name:')) {
+                const kv = parseKeyValue(trimmed);
+                if (kv && typeof kv.value === 'string')
+                    data.name = kv.value;
+                continue;
             }
-            else if (currentDevice && trimmed.startsWith('type:'))
-                currentDevice.type = trimmed.split(':')[1].trim().replace(/"/g, '');
-            else if (currentDevice && trimmed.startsWith('connection:'))
-                currentDevice.connection = trimmed.split(':')[1].trim().replace(/"/g, '');
+            if (trimmed.startsWith('chip:')) {
+                const kv = parseKeyValue(trimmed);
+                if (kv && typeof kv.value === 'string')
+                    data.chip = path.basename(kv.value).replace(/\.ya?ml$/i, '').toUpperCase();
+                continue;
+            }
+            if (trimmed.startsWith('external_devices:')) {
+                flushDevice();
+                flushBoardIo();
+                section = 'external_devices';
+                continue;
+            }
+            if (trimmed.startsWith('board_io:')) {
+                flushDevice();
+                flushBoardIo();
+                section = 'board_io';
+                continue;
+            }
+            if (section === 'external_devices') {
+                if (trimmed.startsWith('- ')) {
+                    flushDevice();
+                    currentDevice = { id: '' };
+                    const kv = parseKeyValue(trimmed.slice(2));
+                    if (kv && kv.key === 'id' && typeof kv.value === 'string')
+                        currentDevice.id = kv.value;
+                }
+                else if (currentDevice) {
+                    const kv = parseKeyValue(trimmed);
+                    if (!kv)
+                        continue;
+                    if (kv.key === 'id' && typeof kv.value === 'string')
+                        currentDevice.id = kv.value;
+                    if (kv.key === 'type' && typeof kv.value === 'string')
+                        currentDevice.type = kv.value;
+                    if (kv.key === 'connection' && typeof kv.value === 'string')
+                        currentDevice.connection = kv.value;
+                }
+                continue;
+            }
+            if (section === 'board_io') {
+                if (trimmed.startsWith('- ')) {
+                    flushBoardIo();
+                    currentBoardIo = { id: '' };
+                    const kv = parseKeyValue(trimmed.slice(2));
+                    if (kv && kv.key === 'id' && typeof kv.value === 'string')
+                        currentBoardIo.id = kv.value;
+                }
+                else if (currentBoardIo) {
+                    const kv = parseKeyValue(trimmed);
+                    if (!kv)
+                        continue;
+                    if (kv.key === 'id' && typeof kv.value === 'string')
+                        currentBoardIo.id = kv.value;
+                    if (kv.key === 'kind' && typeof kv.value === 'string')
+                        currentBoardIo.kind = kv.value;
+                    if (kv.key === 'peripheral' && typeof kv.value === 'string')
+                        currentBoardIo.peripheral = kv.value;
+                    if (kv.key === 'signal' && typeof kv.value === 'string')
+                        currentBoardIo.signal = kv.value;
+                    if (kv.key === 'pin' && typeof kv.value === 'number')
+                        currentBoardIo.pin = kv.value;
+                }
+            }
         }
-        if (currentDevice)
-            data.devices.push(currentDevice);
+        flushDevice();
+        flushBoardIo();
         return data;
     }
     _getHtmlForWebview(webview) {
