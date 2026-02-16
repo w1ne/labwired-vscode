@@ -30,6 +30,11 @@
                     ],
                     "default": "auto",
                     "description": "Demo-only Command Center HUD/UART widgets. 'auto' enables in development mode and disables in production installs."
+                },
+                "labwired.dapPath": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Path to the labwired-dap binary."
                 }
             }
         },
