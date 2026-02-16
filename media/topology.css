@@ -1,12 +1,14 @@
 :root {
     --bg-color: var(--vscode-editor-background);
-    --grid-color: rgba(63, 162, 255, 0.05);
-    --mcu-color: var(--vscode-charts-blue);
-    --device-color: var(--vscode-charts-green);
-    --wire-color: var(--vscode-descriptionForeground);
-    --accent: var(--vscode-charts-blue);
+    --grid-color: rgba(63, 162, 255, 0.06);
+    --mcu-stroke: var(--vscode-charts-blue);
+    --wire-color: rgba(124, 185, 255, 0.5);
     --text-color: var(--vscode-editor-foreground);
-    --hud-bg: var(--vscode-sideBarSectionHeader-background);
+    --muted-text: var(--vscode-descriptionForeground);
+    --panel-bg: var(--vscode-sideBarSectionHeader-background);
+    --accent: var(--vscode-charts-blue);
+    --ok: #3fb950;
+    --warn: #9da7b3;
 }
 
 body {
@@ -14,11 +16,11 @@ body {
     color: var(--text-color);
     margin: 0;
     overflow: hidden;
-    font-family: 'Inter', 'Segoe UI', sans-serif;
+    font-family: 'JetBrains Mono', 'Segoe UI', sans-serif;
     background-image:
         linear-gradient(var(--grid-color) 1px, transparent 1px),
         linear-gradient(90deg, var(--grid-color) 1px, transparent 1px);
-    background-size: 40px 40px;
+    background-size: 36px 36px;
 }
 
 .topology-viewer {
@@ -28,36 +30,36 @@ body {
 }
 
 .hud-header {
-    background: var(--hud-bg);
-    padding: 15px 25px;
+    background: linear-gradient(180deg, rgba(16, 22, 30, 0.92), rgba(16, 22, 30, 0.84));
+    padding: 12px 20px;
     display: flex;
     justify-content: space-between;
     align-items: center;
     border-bottom: 1px solid var(--vscode-sideBar-border);
-    box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
     z-index: 100;
 }
 
 h1 {
-    font-size: 18px;
+    font-size: 22px;
     margin: 0;
-    letter-spacing: 2px;
+    letter-spacing: 1px;
     font-weight: 800;
     color: var(--accent);
 }
 
 .chip-badge {
-    font-size: 10px;
-    background: var(--accent);
-    color: var(--bg-color);
-    padding: 2px 8px;
-    border-radius: 4px;
-    font-weight: 900;
+    font-size: 11px;
+    background: rgba(61, 174, 255, 0.18);
+    color: #87c8ff;
+    padding: 3px 10px;
+    border-radius: 999px;
+    font-weight: 800;
+    border: 1px solid rgba(61, 174, 255, 0.35);
 }
 
 .metrics-overlay {
     display: flex;
-    gap: 30px;
+    gap: 24px;
 }
 
 .metric {
@@ -67,15 +69,17 @@ h1 {
 }
 
 .metric .label {
-    font-size: 9px;
-    color: var(--vscode-descriptionForeground);
-    font-weight: bold;
+    font-size: 10px;
+    color: var(--muted-text);
+    font-weight: 700;
+    letter-spacing: 0.08em;
 }
 
 .metric span:not(.label) {
     font-family: 'JetBrains Mono', monospace;
-    font-size: 16px;
-    color: var(--vscode-charts-blue);
+    font-size: 20px;
+    color: var(--accent);
+    font-weight: 700;
 }
 
 .viewport {
@@ -88,63 +92,91 @@ h1 {
     height: 100%;
 }
 
-/* SVG Styles */
 .mcu-block {
-    fill: var(--vscode-sideBarSectionHeader-background);
-    stroke: var(--mcu-color);
+    fill: rgba(15, 20, 28, 0.96);
+    stroke: var(--mcu-stroke);
     stroke-width: 3;
-    rx: 8;
 }
 
 .mcu-label {
-    fill: var(--mcu-color);
-    font-weight: 900;
-    font-size: 14px;
+    fill: #87c8ff;
+    font-weight: 800;
+    font-size: 30px;
+    letter-spacing: 0.02em;
 }
 
-.device-block {
-    fill: var(--vscode-sideBarSectionHeader-background);
-    stroke: var(--wire-color);
-    stroke-width: 2;
-    rx: 4;
-}
-
-.device-id {
-    fill: var(--text-color);
-    font-weight: 700;
+.mcu-sub-label {
+    fill: var(--muted-text);
     font-size: 12px;
-}
-
-.device-type {
-    fill: var(--vscode-descriptionForeground);
-    font-size: 10px;
-}
-
-.device-bus {
-    fill: var(--accent);
-    font-weight: 900;
-    font-size: 9px;
+    letter-spacing: 0.16em;
 }
 
 .wire-main {
     stroke: var(--wire-color);
-    stroke-width: 1;
+    stroke-width: 2;
     fill: none;
-    stroke-dasharray: 5, 5;
-    opacity: 0.3;
+    stroke-dasharray: 6 5;
 }
 
-.data-bullet {
+.node-card {
+    fill: rgba(14, 18, 25, 0.98);
+    stroke: rgba(170, 177, 187, 0.6);
+    stroke-width: 2;
+}
+
+.node-card.led {
+    stroke: rgba(79, 181, 255, 0.75);
+}
+
+.node-card.button {
+    stroke: rgba(111, 233, 145, 0.75);
+}
+
+.node-title {
+    fill: var(--text-color);
+    font-size: 17px;
+    font-weight: 700;
+}
+
+.node-subtitle {
+    fill: var(--muted-text);
+    font-size: 12px;
+}
+
+.node-kind {
     fill: var(--accent);
-    filter: drop-shadow(0 0 5px var(--accent));
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.06em;
 }
 
-@keyframes data-flow {
-    from {
-        stroke-dashoffset: 20;
-    }
+.node-state-pill {
+    stroke-width: 1;
+}
 
-    to {
-        stroke-dashoffset: 0;
-    }
+.node-state-pill.on {
+    fill: rgba(63, 185, 80, 0.2);
+    stroke: rgba(63, 185, 80, 0.5);
+}
+
+.node-state-pill.off {
+    fill: rgba(157, 167, 179, 0.14);
+    stroke: rgba(157, 167, 179, 0.35);
+}
+
+.node-state-pill.unknown {
+    fill: rgba(157, 167, 179, 0.14);
+    stroke: rgba(157, 167, 179, 0.35);
+}
+
+.node-state-text {
+    fill: #d8e1ea;
+    font-size: 9px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+}
+
+.empty-label {
+    fill: var(--muted-text);
+    font-size: 14px;
 }

@@ -1,5 +1,4 @@
 (function () {
-    const vscode = acquireVsCodeApi();
     const svg = document.getElementById('schematic');
     const boardNameEl = document.getElementById('board-name');
     const chipIdEl = document.getElementById('chip-id');
@@ -7,124 +6,212 @@
     const pcEl = document.getElementById('pc');
 
     let currentBoard = null;
-    const pulseThrottle = new Map(); // Track last pulse time per wire
+    const nodeElements = new Map();
+    const boardIoState = new Map();
 
     window.addEventListener('message', event => {
         const message = event.data;
         switch (message.type) {
             case 'update':
-                currentBoard = message.data;
-                renderTopology(message.data);
+                currentBoard = normalizeBoard(message.data || {});
+                renderTopology(currentBoard);
                 break;
             case 'telemetry':
-                updateHUD(message.data);
+                updateTelemetry(message.data || {});
                 break;
         }
     });
 
-    function updateHUD(data) {
-        if (mipsEl) mipsEl.textContent = data.mips.toFixed(2);
-        if (pcEl) pcEl.textContent = `0x${data.pc.toString(16).toUpperCase().padStart(8, '0')}`;
+    window.addEventListener('resize', () => {
+        if (currentBoard) {
+            renderTopology(currentBoard);
+        }
+    });
+
+    function safeText(value, fallback) {
+        if (typeof value !== 'string') return fallback;
+        const trimmed = value.trim();
+        return trimmed.length > 0 ? trimmed : fallback;
     }
 
-    function renderTopology(data) {
-        boardNameEl.textContent = (data.name || 'SYSTEM').toUpperCase();
-        chipIdEl.textContent = data.chip || 'MCU';
+    function normalizeBoard(data) {
+        const boardIo = Array.isArray(data.board_io)
+            ? data.board_io.map((item) => ({
+                id: safeText(item?.id, 'io'),
+                kind: safeText(item?.kind, 'io').toLowerCase(),
+                peripheral: safeText(item?.peripheral, 'gpio').toUpperCase(),
+                pin: typeof item?.pin === 'number' ? item.pin : null
+            }))
+            : [];
 
-        svg.innerHTML = ''; // Clear
+        const devices = Array.isArray(data.devices)
+            ? data.devices.map((item) => ({
+                id: safeText(item?.id, 'device'),
+                kind: safeText(item?.type, 'device').toLowerCase(),
+                bus: safeText(item?.connection, 'GPIO')
+            }))
+            : [];
+
+        return {
+            name: safeText(data?.name, 'SYSTEM'),
+            chip: safeText(data?.chip, 'MCU'),
+            board_io: boardIo,
+            devices
+        };
+    }
+
+    function getNodes(board) {
+        if (board.board_io.length > 0) {
+            return board.board_io.map((io) => ({
+                id: io.id,
+                kind: io.kind,
+                title: io.id,
+                subtitle: `${io.peripheral}${io.pin !== null ? `[${io.pin}]` : ''}`,
+                bus: 'GPIO'
+            }));
+        }
+
+        return board.devices.map((dev) => ({
+            id: dev.id,
+            kind: dev.kind,
+            title: dev.id,
+            subtitle: safeText(dev.bus, 'GPIO'),
+            bus: safeText(dev.bus, 'GPIO')
+        }));
+    }
+
+    function updateTelemetry(data) {
+        if (mipsEl && typeof data.mips === 'number') {
+            mipsEl.textContent = data.mips.toFixed(2);
+        }
+        if (pcEl && typeof data.pc === 'number') {
+            pcEl.textContent = `0x${data.pc.toString(16).toUpperCase().padStart(8, '0')}`;
+        }
+
+        if (Array.isArray(data.board_io)) {
+            data.board_io.forEach((state) => {
+                if (!state || !state.id) return;
+                boardIoState.set(state.id, typeof state.active === 'boolean' ? state.active : null);
+            });
+            applyNodeStates();
+        }
+    }
+
+    function stateView(kind, active) {
+        if (active === null || active === undefined) {
+            return { label: 'UNAVAILABLE', css: 'unknown' };
+        }
+
+        if (kind === 'button') {
+            return active
+                ? { label: 'PRESSED', css: 'on' }
+                : { label: 'RELEASED', css: 'off' };
+        }
+
+        return active
+            ? { label: 'ON', css: 'on' }
+            : { label: 'OFF', css: 'off' };
+    }
+
+    function applyNodeStates() {
+        nodeElements.forEach((entry, id) => {
+            const active = boardIoState.has(id) ? boardIoState.get(id) : null;
+            const view = stateView(entry.kind, active);
+
+            entry.pill.classList.remove('on', 'off', 'unknown');
+            entry.pill.classList.add(view.css);
+            entry.text.textContent = view.label;
+        });
+    }
+
+    function renderTopology(board) {
+        boardNameEl.textContent = board.name.toUpperCase();
+        chipIdEl.textContent = board.chip;
+
+        svg.innerHTML = '';
+        nodeElements.clear();
+
         const width = window.innerWidth;
-        const height = window.innerHeight - 80;
+        const height = Math.max(window.innerHeight - 70, 360);
         svg.setAttribute('viewBox', `0 0 ${width} ${height}`);
 
         const centerX = width / 2;
         const centerY = height / 2;
 
-        // Draw MCU
-        const mcuSize = 120;
-        const mcuGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
-        const mcu = createRect(centerX - mcuSize / 2, centerY - mcuSize / 2, mcuSize, mcuSize, 'mcu-block');
-        mcuGroup.appendChild(mcu);
-        const mcuLabel = createText(centerX, centerY, data.chip, 'mcu-label');
-        mcuGroup.appendChild(mcuLabel);
+        const mcuW = 220;
+        const mcuH = 120;
+        const mcuGroup = createGroup(centerX - mcuW / 2, centerY - mcuH / 2);
+        mcuGroup.appendChild(createRect(0, 0, mcuW, mcuH, 'mcu-block'));
+        mcuGroup.appendChild(createText(mcuW / 2, 48, board.chip, 'mcu-label'));
+        mcuGroup.appendChild(createText(mcuW / 2, 76, 'CORE', 'mcu-sub-label'));
         svg.appendChild(mcuGroup);
 
-        // Group devices by Bus/Connection
-        const devices = data.devices || [];
-        const groups = {};
-        devices.forEach(d => {
-            const bus = d.connection || 'GPIO';
-            if (!groups[bus]) groups[bus] = [];
-            groups[bus].push(d);
+        const nodes = getNodes(board);
+        if (nodes.length === 0) {
+            svg.appendChild(createText(centerX, centerY + 120, 'No mapped devices or board IO', 'empty-label'));
+            return;
+        }
+
+        const cardW = 180;
+        const cardH = 92;
+        const radius = Math.min(width, height) * 0.34;
+
+        nodes.forEach((node, index) => {
+            const angle = (index / nodes.length) * 2 * Math.PI - Math.PI / 2;
+            const x = centerX + radius * Math.cos(angle);
+            const y = centerY + radius * Math.sin(angle);
+
+            const wire = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+            wire.setAttribute('d', `M ${centerX} ${centerY} L ${x} ${y}`);
+            wire.setAttribute('class', 'wire-main');
+            svg.appendChild(wire);
+
+            const g = createGroup(x - cardW / 2, y - cardH / 2);
+            const rect = createRect(0, 0, cardW, cardH, `node-card ${node.kind}`);
+            g.appendChild(rect);
+
+            g.appendChild(createText(12, 24, node.title, 'node-title', 'start'));
+            g.appendChild(createText(12, 45, node.subtitle, 'node-subtitle', 'start'));
+
+            const kindLabel = safeText(node.kind, 'io').toUpperCase();
+            g.appendChild(createText(12, 67, kindLabel, 'node-kind', 'start'));
+
+            const state = stateView(node.kind, boardIoState.has(node.id) ? boardIoState.get(node.id) : null);
+            const statePill = createRect(cardW - 86, cardH - 28, 74, 18, `node-state-pill ${state.css}`);
+            const stateText = createText(cardW - 49, cardH - 15, state.label, 'node-state-text');
+            g.appendChild(statePill);
+            g.appendChild(stateText);
+
+            nodeElements.set(node.id, { kind: node.kind, pill: statePill, text: stateText });
+            svg.appendChild(g);
         });
 
-        const busKeys = Object.keys(groups);
-        const totalGroups = busKeys.length;
-        const radius = Math.min(width, height) * 0.35;
+        applyNodeStates();
+    }
 
-        busKeys.forEach((bus, gIndex) => {
-            const groupDevices = groups[bus];
-            // Allocate a sector for this bus
-            const sectorStart = (gIndex / totalGroups) * 2 * Math.PI;
-            const sectorSize = (1 / totalGroups) * 2 * Math.PI;
-
-            // Draw Bus Label (optional, maybe a hub node?)
-            // strictly, we just distribute devices in this sector
-
-            groupDevices.forEach((device, dIndex) => {
-                // Distribute within sector
-                const angle = sectorStart + (sectorSize * (dIndex + 1) / (groupDevices.length + 1)) - Math.PI / 2;
-                const px = centerX + radius * Math.cos(angle);
-                const py = centerY + radius * Math.sin(angle);
-
-                // Connection Wire
-                const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
-                // Use orthogonal or curved routing for "Schematic" feel?
-                // For now, straight lines with a "bus node" feel if multiple devices share it
-                // Simple star topology is safest for dynamic layout
-                const d = `M ${centerX} ${centerY} L ${px} ${py}`;
-                path.setAttribute('d', d);
-                path.setAttribute('class', `wire-main wire-${bus.toLowerCase()}`); // unique class per bus type?
-                path.id = `wire-${device.id}`;
-                svg.appendChild(path);
-
-                // Peripheral Block
-                const pSize = 80;
-                const pGroup = document.createElementNS("http://www.w3.org/2000/svg", "g");
-                pGroup.setAttribute('transform', `translate(${px - pSize / 2}, ${py - pSize / 2})`);
-
-                const rect = createRect(0, 0, pSize, pSize, 'device-block');
-                pGroup.appendChild(rect);
-
-                const label = createText(pSize / 2, pSize / 3, device.id, 'device-id');
-                pGroup.appendChild(label);
-
-                const type = createText(pSize / 2, pSize / 1.5, device.type, 'device-type');
-                pGroup.appendChild(type);
-
-                const busLabel = createText(pSize / 2, pSize - 10, bus, 'device-bus');
-                pGroup.appendChild(busLabel);
-
-                svg.appendChild(pGroup);
-            });
-        });
+    function createGroup(x, y) {
+        const g = document.createElementNS('http://www.w3.org/2000/svg', 'g');
+        g.setAttribute('transform', `translate(${x}, ${y})`);
+        return g;
     }
 
     function createRect(x, y, w, h, cls) {
-        const rect = document.createElementNS("http://www.w3.org/2000/svg", "rect");
+        const rect = document.createElementNS('http://www.w3.org/2000/svg', 'rect');
         rect.setAttribute('x', x);
         rect.setAttribute('y', y);
         rect.setAttribute('width', w);
         rect.setAttribute('height', h);
         rect.setAttribute('class', cls);
+        rect.setAttribute('rx', '10');
         return rect;
     }
 
-    function createText(x, y, txt, cls) {
-        const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+    function createText(x, y, txt, cls, anchor = 'middle') {
+        const text = document.createElementNS('http://www.w3.org/2000/svg', 'text');
         text.setAttribute('x', x);
         text.setAttribute('y', y);
         text.setAttribute('class', cls);
-        text.setAttribute('text-anchor', 'middle');
+        text.setAttribute('text-anchor', anchor);
         text.textContent = txt;
         return text;
     }
