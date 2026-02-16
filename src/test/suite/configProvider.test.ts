@@ -39,7 +39,7 @@ suite('LabwiredConfigurationProvider Test Suite', () => {
         assert.strictEqual(resolved?.type, 'labwired');
         assert.strictEqual(resolved?.name, 'LabWired: Launch');
         assert.strictEqual(resolved?.request, 'launch');
-        assert.strictEqual(resolved?.stopOnEntry, true);
+        assert.strictEqual(resolved?.stopOnEntry, false);
         assert.ok(resolved?.program.includes('firmware'));
     });
 

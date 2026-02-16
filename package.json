@@ -18,6 +18,21 @@
         "workspaceContains:**/Makefile"
     ],
     "contributes": {
+        "configuration": {
+            "title": "LabWired",
+            "properties": {
+                "labwired.demoUi.mode": {
+                    "type": "string",
+                    "enum": [
+                        "auto",
+                        "off",
+                        "on"
+                    ],
+                    "default": "auto",
+                    "description": "Demo-only Command Center HUD/UART widgets. 'auto' enables in development mode and disables in production installs."
+                }
+            }
+        },
         "debuggers": [
             {
                 "type": "labwired",

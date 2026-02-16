@@ -14,7 +14,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.deactivate = exports.activate = exports.LabwiredDebugAdapterDescriptorFactory = exports.LabwiredConfigurationProvider = void 0;
+exports.deactivate = exports.activate = exports.LabwiredDebugAdapterDescriptorFactory = exports.LabwiredConfigurationProvider = exports.handleLabwiredDebugEvent = void 0;
 const vscode = require("vscode");
 const path = require("path");
 const fs = require("fs");
@@ -31,6 +31,227 @@ const simulatorManager_1 = require("./simulatorManager");
 const topologyPanel_1 = require("./topologyPanel");
 const simulatorView_1 = require("./simulatorView");
 const configWizard_1 = require("./configWizard");
+const CONFIG_SEARCH_EXCLUDES = '**/{node_modules,target,.git,dist,out}/**';
+const STOP_WORD_HINTS = new Set([
+    'andrii',
+    'build',
+    'core',
+    'crates',
+    'debug',
+    'demo',
+    'firmware',
+    'home',
+    'labwired',
+    'main',
+    'none',
+    'projects',
+    'release',
+    'src',
+    'target',
+    'thumbv7m',
+    'workspace',
+    'yaml',
+]);
+function tokenizeHints(...hints) {
+    const tokens = new Set();
+    for (const hint of hints) {
+        if (!hint)
+            continue;
+        const normalized = hint.toLowerCase();
+        const parts = normalized.split(/[^a-z0-9]+/).filter(Boolean);
+        for (const part of parts) {
+            if (STOP_WORD_HINTS.has(part))
+                continue;
+            if (part.length < 3 && !/\d/.test(part))
+                continue;
+            tokens.add(part);
+        }
+    }
+    return Array.from(tokens);
+}
+function scoreConfigPath(candidatePath, rootPath, fileName, tokens) {
+    const resolved = path.resolve(candidatePath);
+    const lower = resolved.toLowerCase();
+    let score = 0;
+    if (resolved === path.join(rootPath, fileName)) {
+        score += 80;
+    }
+    if (resolved === path.join(rootPath, 'core', fileName)) {
+        score += 60;
+    }
+    if (lower.includes(`${path.sep}examples${path.sep}`)) {
+        score += 30;
+    }
+    if (lower.includes(`${path.sep}core${path.sep}examples${path.sep}`)) {
+        score += 10;
+    }
+    for (const token of tokens) {
+        if (lower.includes(token)) {
+            score += 50;
+        }
+    }
+    return score;
+}
+function listExampleConfigCandidates(anchor, fileName) {
+    const roots = [
+        path.join(anchor, 'examples'),
+        path.join(anchor, 'core', 'examples'),
+    ];
+    const candidates = [];
+    for (const root of roots) {
+        if (!fs.existsSync(root)) {
+            continue;
+        }
+        let entries = [];
+        try {
+            entries = fs.readdirSync(root, { withFileTypes: true });
+        }
+        catch (_a) {
+            continue;
+        }
+        for (const entry of entries) {
+            if (!entry.isDirectory()) {
+                continue;
+            }
+            const p = path.join(root, entry.name, fileName);
+            if (fs.existsSync(p)) {
+                candidates.push(p);
+            }
+        }
+    }
+    return candidates;
+}
+function detectBestConfigPathFromAnchors(rootPath, fileName, hintInputs) {
+    const tokens = tokenizeHints(...hintInputs);
+    const anchors = new Set();
+    anchors.add(path.resolve(rootPath));
+    for (const hint of hintInputs) {
+        if (!hint)
+            continue;
+        const normalized = path.resolve(hint);
+        let current = fs.existsSync(normalized) && fs.statSync(normalized).isDirectory()
+            ? normalized
+            : path.dirname(normalized);
+        for (let i = 0; i < 6; i++) {
+            anchors.add(current);
+            const parent = path.dirname(current);
+            if (parent === current) {
+                break;
+            }
+            current = parent;
+        }
+    }
+    const candidates = new Set();
+    for (const anchor of anchors) {
+        const direct = path.join(anchor, fileName);
+        if (fs.existsSync(direct)) {
+            candidates.add(direct);
+        }
+        for (const p of listExampleConfigCandidates(anchor, fileName)) {
+            candidates.add(p);
+        }
+    }
+    const scored = Array.from(candidates)
+        .map((p) => ({
+        path: path.resolve(p),
+        score: scoreConfigPath(p, rootPath, fileName, tokens),
+    }))
+        .sort((a, b) => {
+        if (b.score !== a.score) {
+            return b.score - a.score;
+        }
+        return a.path.length - b.path.length;
+    });
+    return scored.length > 0 ? scored[0].path : undefined;
+}
+function detectBestConfigPath(rootPath, fileName, hintInputs) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const direct = path.join(rootPath, fileName);
+        if (fs.existsSync(direct)) {
+            return direct;
+        }
+        const tokens = tokenizeHints(...hintInputs);
+        const candidates = yield vscode.workspace.findFiles(`**/${fileName}`, CONFIG_SEARCH_EXCLUDES, 200);
+        if (candidates.length === 0) {
+            return detectBestConfigPathFromAnchors(rootPath, fileName, hintInputs);
+        }
+        const rootNorm = path.resolve(rootPath);
+        const scored = candidates
+            .map((uri) => uri.fsPath)
+            .filter((p) => path.resolve(p).startsWith(rootNorm))
+            .map((p) => {
+            const resolved = path.resolve(p);
+            return { path: resolved, score: scoreConfigPath(resolved, rootPath, fileName, tokens) };
+        })
+            .sort((a, b) => {
+            if (b.score !== a.score) {
+                return b.score - a.score;
+            }
+            return a.path.length - b.path.length;
+        });
+        if (scored.length > 0) {
+            return scored[0].path;
+        }
+        return detectBestConfigPathFromAnchors(rootPath, fileName, hintInputs);
+    });
+}
+function handleLabwiredDebugEvent(e, deps) {
+    var _a, _b, _c;
+    if (e.session.type !== 'labwired') {
+        return;
+    }
+    if (e.event === 'telemetry') {
+        const telemetry = Object.assign(Object.assign({}, (e.body || {})), { status: deps.simulatorManager.status });
+        deps.commandCenterProvider.updateTelemetry(telemetry);
+        deps.sendTopologyTelemetry(telemetry);
+        if ((_a = e.body) === null || _a === void 0 ? void 0 : _a.signals) {
+            deps.graphingPanel.updateSignals(e.body.signals);
+        }
+        return;
+    }
+    if (e.event === 'uart') {
+        const payload = e.body;
+        const output = typeof (payload === null || payload === void 0 ? void 0 : payload.output) === 'string'
+            ? payload.output
+            : String((_b = payload === null || payload === void 0 ? void 0 : payload.output) !== null && _b !== void 0 ? _b : '');
+        if (output.length > 0) {
+            deps.outputChannel.appendLine(output);
+            deps.commandCenterProvider.markUartActivity();
+            deps.commandCenterProvider.appendUartOutput(output);
+        }
+        return;
+    }
+    if (e.event === 'output') {
+        const body = e.body || {};
+        if (body.category === 'stdout' || body.category === 'stderr') {
+            const output = typeof body.output === 'string' ? body.output : String((_c = body.output) !== null && _c !== void 0 ? _c : '');
+            if (output.length > 0) {
+                deps.outputChannel.appendLine(output);
+                deps.commandCenterProvider.markUartActivity();
+                deps.commandCenterProvider.appendUartOutput(output);
+            }
+        }
+        return;
+    }
+    if (e.event === 'continued') {
+        deps.simulatorManager.syncDebugSessionStatus(true);
+        deps.peripheralProvider.refresh();
+        deps.rtosProvider.refresh();
+        deps.memoryInspectorPanel.refresh();
+        deps.traceListPanel.refresh();
+        deps.profilingPanel.refresh();
+        return;
+    }
+    if (e.event === 'stopped') {
+        deps.simulatorManager.syncDebugSessionStatus(false);
+        deps.peripheralProvider.refresh();
+        deps.rtosProvider.refresh();
+        deps.memoryInspectorPanel.refresh();
+        deps.traceListPanel.refresh();
+        deps.profilingPanel.refresh();
+    }
+}
+exports.handleLabwiredDebugEvent = handleLabwiredDebugEvent;
 class LabwiredConfigurationProvider {
     constructor(output, cpModule = require('child_process'), checkFile = fileExists) {
         this.output = output;
@@ -38,6 +259,7 @@ class LabwiredConfigurationProvider {
         this.checkFile = checkFile;
     }
     resolveDebugConfiguration(folder, config, token) {
+        var _a;
         return __awaiter(this, void 0, void 0, function* () {
             this.output.appendLine(`LabWired: Resolving debug configuration...`);
             if (!config.type && !config.request && !config.name) {
@@ -45,7 +267,7 @@ class LabwiredConfigurationProvider {
                 config.type = 'labwired';
                 config.name = 'LabWired: Launch';
                 config.request = 'launch';
-                config.stopOnEntry = true;
+                config.stopOnEntry = false;
             }
             if (!config.program) {
                 this.output.appendLine("LabWired: Program not specified, attempting auto-detection...");
@@ -69,16 +291,20 @@ class LabwiredConfigurationProvider {
             // Auto-detect config files if they exist in root
             if (folder) {
                 const rootPath = folder.uri.fsPath;
+                const activePath = (_a = vscode.window.activeTextEditor) === null || _a === void 0 ? void 0 : _a.document.uri.fsPath;
+                const hintInputs = [config.program, activePath];
                 if (!config.systemConfig) {
-                    const systemYaml = path.join(rootPath, 'system.yaml');
-                    if (yield this.checkFile(systemYaml)) {
-                        config.systemConfig = systemYaml;
+                    const detectedSystem = yield detectBestConfigPath(rootPath, 'system.yaml', hintInputs);
+                    if (detectedSystem) {
+                        config.systemConfig = detectedSystem;
+                        this.output.appendLine(`LabWired: Auto-detected system config: ${detectedSystem}`);
                     }
                 }
                 if (!config.mcuConfig) {
-                    const mcuYaml = path.join(rootPath, 'mcu.yaml');
-                    if (yield this.checkFile(mcuYaml)) {
-                        config.mcuConfig = mcuYaml;
+                    const detectedMcu = yield detectBestConfigPath(rootPath, 'mcu.yaml', hintInputs);
+                    if (detectedMcu) {
+                        config.mcuConfig = detectedMcu;
+                        this.output.appendLine(`LabWired: Auto-detected MCU config: ${detectedMcu}`);
                     }
                 }
             }
@@ -180,11 +406,11 @@ function activate(context) {
         const activeSession = vscode.debug.activeDebugSession;
         const baseConfig = (activeSession === null || activeSession === void 0 ? void 0 : activeSession.type) === 'labwired' ? activeSession.configuration : undefined;
         const debugConfig = baseConfig
-            ? Object.assign(Object.assign({}, baseConfig), { type: 'labwired', request: 'launch' }) : {
+            ? Object.assign(Object.assign({}, baseConfig), { type: 'labwired', request: 'launch', stopOnEntry: false }) : {
             name: 'LabWired: Launch',
             type: 'labwired',
             request: 'launch',
-            stopOnEntry: true
+            stopOnEntry: false
         };
         const started = yield vscode.debug.startDebugging(workspaceFolders[0], debugConfig);
         if (!started) {
@@ -214,7 +440,11 @@ function activate(context) {
         const { importSvdWizard } = require('./configWizard');
         yield importSvdWizard();
     })));
-    const commandCenterProvider = new commandCenter_1.LabwiredCommandCenterProvider(context.extensionUri);
+    const uiConfig = vscode.workspace.getConfiguration('labwired');
+    const demoUiMode = (uiConfig.get('demoUi.mode') || 'auto').toLowerCase();
+    const demoUiEnabled = demoUiMode === 'on'
+        || (demoUiMode === 'auto' && context.extensionMode === vscode.ExtensionMode.Development);
+    const commandCenterProvider = new commandCenter_1.LabwiredCommandCenterProvider(context.extensionUri, demoUiEnabled);
     context.subscriptions.push(vscode.window.registerWebviewViewProvider(commandCenter_1.LabwiredCommandCenterProvider.viewType, commandCenterProvider));
     context.subscriptions.push(simulatorManager.onStatusChanged((status) => {
         commandCenterProvider.updateStatus(status);
@@ -257,40 +487,39 @@ function activate(context) {
     const adapterFactory = new LabwiredDebugAdapterDescriptorFactory(context, outputChannel);
     context.subscriptions.push(vscode.debug.registerDebugAdapterDescriptorFactory('labwired', adapterFactory));
     // Handle Telemetry and UI Sync
-    context.subscriptions.push(vscode.debug.onDidReceiveDebugSessionCustomEvent(e => {
-        if (e.session.type === 'labwired') {
-            if (e.event === 'telemetry') {
-                const telemetry = Object.assign(Object.assign({}, e.body), { status: simulatorManager.status });
-                commandCenterProvider.updateTelemetry(telemetry);
-                if (topologyPanel_1.SystemTopologyPanel.currentPanel) {
-                    topologyPanel_1.SystemTopologyPanel.currentPanel.sendTelemetry(telemetry);
-                }
-                if (e.body.signals) {
-                    graphingPanel.updateSignals(e.body.signals);
-                }
-            }
-            else if (e.event === 'stopped' || e.event === 'continued') {
-                peripheralProvider.refresh();
-                rtosProvider.refresh();
-                memoryInspectorPanel.refresh();
-                traceListPanel.refresh();
-                profilingPanel.refresh();
-                // Optionally refresh timeline too if it's visible
+    const handleEvent = (e) => handleLabwiredDebugEvent(e, {
+        simulatorManager,
+        commandCenterProvider,
+        graphingPanel,
+        peripheralProvider,
+        rtosProvider,
+        memoryInspectorPanel,
+        traceListPanel,
+        profilingPanel,
+        outputChannel,
+        sendTopologyTelemetry: (telemetry) => {
+            if (topologyPanel_1.SystemTopologyPanel.currentPanel) {
+                topologyPanel_1.SystemTopologyPanel.currentPanel.sendTelemetry(telemetry);
             }
         }
+    });
+    context.subscriptions.push(vscode.debug.onDidReceiveDebugSessionCustomEvent(e => {
+        if (e.event === 'output') {
+            return;
+        }
+        handleEvent(e);
     }));
     // Handle standard output events for high-fidelity logging
     context.subscriptions.push(vscode.debug.onDidReceiveDebugSessionCustomEvent(e => {
-        if (e.session.type === 'labwired' && e.event === 'output') {
-            const body = e.body;
-            if (body.category === 'stdout' || body.category === 'stderr') {
-                outputChannel.appendLine(body.output);
-            }
+        if (e.event !== 'output') {
+            return;
         }
+        handleEvent(e);
     }));
     // Register Compile and Run command
     context.subscriptions.push(vscode.commands.registerCommand('labwired.compileAndRun', () => __awaiter(this, void 0, void 0, function* () {
         try {
+            commandCenterProvider.clearUartOutput();
             yield compileAndRun(context, outputChannel, simulatorManager);
         }
         catch (e) {
@@ -340,6 +569,7 @@ function activate(context) {
 }
 exports.activate = activate;
 function compileAndRun(context, outputChannel, simulatorManager) {
+    var _a;
     return __awaiter(this, void 0, void 0, function* () {
         const workspaceFolders = vscode.workspace.workspaceFolders;
         if (!workspaceFolders || workspaceFolders.length === 0) {
@@ -397,7 +627,8 @@ function compileAndRun(context, outputChannel, simulatorManager) {
         }
         else if (hasMakefile) {
             projectType = 'Makefile';
-            buildCommand = 'make';
+            // Force debug profile so source line breakpoints remain reliable.
+            buildCommand = 'make PROFILE=debug';
             binaryPath = path.join(rootPath, 'target', 'firmware');
         }
         else {
@@ -442,28 +673,29 @@ function compileAndRun(context, outputChannel, simulatorManager) {
             }
         }
         vscode.window.showInformationMessage(`LabWired: Launching ${path.basename(binaryPath)}...`);
-        // Start simulator in background via manager
-        const config = vscode.workspace.getConfiguration('labwired');
-        let dapPath = config.get('dapPath');
-        if (!dapPath) {
-            dapPath = yield findDapPath(context.extensionUri, outputChannel);
-        }
-        yield simulatorManager.start(dapPath, ["--gdb", "3333", "--firmware", binaryPath]);
         const debugConfig = {
             name: 'LabWired: Hot-Reload',
             type: 'labwired',
             request: 'launch',
             program: binaryPath,
-            stopOnEntry: true
+            stopOnEntry: false
         };
         // Auto-detect config files
-        const systemYaml = path.join(rootPath, 'system.yaml');
-        if (yield fileExists(systemYaml))
+        const hintInputs = [binaryPath, (_a = vscode.window.activeTextEditor) === null || _a === void 0 ? void 0 : _a.document.uri.fsPath];
+        const systemYaml = yield detectBestConfigPath(rootPath, 'system.yaml', hintInputs);
+        if (systemYaml) {
             debugConfig.systemConfig = systemYaml;
-        const mcuYaml = path.join(rootPath, 'mcu.yaml');
-        if (yield fileExists(mcuYaml))
+            outputChannel.appendLine(`LabWired: Using system config ${systemYaml}`);
+        }
+        const mcuYaml = yield detectBestConfigPath(rootPath, 'mcu.yaml', hintInputs);
+        if (mcuYaml) {
             debugConfig.mcuConfig = mcuYaml;
-        yield vscode.debug.startDebugging(workspaceFolders[0], debugConfig);
+            outputChannel.appendLine(`LabWired: Using MCU config ${mcuYaml}`);
+        }
+        const started = yield vscode.debug.startDebugging(workspaceFolders[0], debugConfig);
+        if (!started) {
+            throw new Error('Debugger session failed to start.');
+        }
     });
 }
 function fileExists(filePath) {
