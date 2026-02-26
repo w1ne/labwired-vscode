@@ -59,6 +59,9 @@ class PeripheralItem extends PeripheralBaseItem {
     }
     getChildren() {
         return __awaiter(this, void 0, void 0, function* () {
+            if (!this.registers || this.registers.length === 0) {
+                return [new InfoItem('No register descriptors available')];
+            }
             return this.registers.map(r => new RegisterItem(r.name, r.offset, r.value, r.fields));
         });
     }
@@ -76,6 +79,9 @@ class RegisterItem extends PeripheralBaseItem {
     }
     getChildren() {
         return __awaiter(this, void 0, void 0, function* () {
+            if (!this.fields || this.fields.length === 0) {
+                return [new InfoItem('No bitfield metadata available')];
+            }
             return (this.fields || []).map(f => new FieldItem(f.name, f.bitOffset, f.bitWidth, f.value, f.description));
         });
     }
@@ -91,6 +97,19 @@ class FieldItem extends PeripheralBaseItem {
         this.tooltip = fieldDescription || `${name} [${bitOffset + bitWidth - 1}:${bitOffset}]`;
         this.description = `0x${value.toString(16)}`;
         this.iconPath = new vscode.ThemeIcon('symbol-field');
+    }
+    getChildren() {
+        return __awaiter(this, void 0, void 0, function* () {
+            return [];
+        });
+    }
+}
+class InfoItem extends PeripheralBaseItem {
+    constructor(message) {
+        super(message, vscode.TreeItemCollapsibleState.None);
+        this.message = message;
+        this.iconPath = new vscode.ThemeIcon('info');
+        this.description = '';
     }
     getChildren() {
         return __awaiter(this, void 0, void 0, function* () {

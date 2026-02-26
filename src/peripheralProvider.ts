@@ -52,6 +52,9 @@ class PeripheralItem extends PeripheralBaseItem {
     }
 
     async getChildren(): Promise<PeripheralBaseItem[]> {
+        if (!this.registers || this.registers.length === 0) {
+            return [new InfoItem('No register descriptors available')];
+        }
         return this.registers.map(r => new RegisterItem(r.name, r.offset, r.value, r.fields));
     }
 }
@@ -70,6 +73,9 @@ class RegisterItem extends PeripheralBaseItem {
     }
 
     async getChildren(): Promise<PeripheralBaseItem[]> {
+        if (!this.fields || this.fields.length === 0) {
+            return [new InfoItem('No bitfield metadata available')];
+        }
         return (this.fields || []).map(f => new FieldItem(f.name, f.bitOffset, f.bitWidth, f.value, f.description));
     }
 }
@@ -86,6 +92,18 @@ class FieldItem extends PeripheralBaseItem {
         this.tooltip = fieldDescription || `${name} [${bitOffset + bitWidth - 1}:${bitOffset}]`;
         this.description = `0x${value.toString(16)}`;
         this.iconPath = new vscode.ThemeIcon('symbol-field');
+    }
+
+    async getChildren(): Promise<PeripheralBaseItem[]> {
+        return [];
+    }
+}
+
+class InfoItem extends PeripheralBaseItem {
+    constructor(public readonly message: string) {
+        super(message, vscode.TreeItemCollapsibleState.None);
+        this.iconPath = new vscode.ThemeIcon('info');
+        this.description = '';
     }
 
     async getChildren(): Promise<PeripheralBaseItem[]> {

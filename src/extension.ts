@@ -319,6 +319,20 @@ export class LabwiredConfigurationProvider implements vscode.DebugConfigurationP
             }
         }
 
+        const rootPath = folder?.uri.fsPath;
+        if (typeof config.program === 'string') {
+            config.program = resolveDebugPath(config.program, rootPath);
+        }
+        if (typeof config.systemConfig === 'string') {
+            config.systemConfig = resolveDebugPath(config.systemConfig, rootPath);
+        }
+        if (typeof config.mcuConfig === 'string') {
+            config.mcuConfig = resolveDebugPath(config.mcuConfig, rootPath);
+        }
+        if (typeof config.cwd === 'string') {
+            config.cwd = resolveDebugPath(config.cwd, rootPath);
+        }
+
         if (!config.program || !await this.checkFile(config.program)) {
             this.output.appendLine("LabWired: ERROR - No program found to debug.");
             vscode.window.showErrorMessage("Cannot find a program to debug. Please ensure you have a Cargo.toml or Makefile and have built the project.");
@@ -815,6 +829,26 @@ async function fileExists(filePath: string): Promise<boolean> {
     } catch {
         return false;
     }
+}
+
+function resolveDebugPath(template: string, workspaceRoot?: string): string {
+    let resolved = template;
+    const root = workspaceRoot || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || '';
+
+    if (root) {
+        resolved = resolved
+            .replace(/\$\{workspaceFolder\}/g, root)
+            .replace(/\$\{workspaceRoot\}/g, root)
+            .replace(/\$\{workspaceFolderBasename\}/g, path.basename(root));
+    }
+
+    resolved = resolved.replace(/\$\{env:([^}]+)\}/g, (_m, name: string) => process.env[name] ?? '');
+    resolved = resolved.replace(/\$\{pathSeparator\}/g, path.sep);
+
+    if (root && !path.isAbsolute(resolved)) {
+        resolved = path.resolve(root, resolved);
+    }
+    return resolved;
 }
 
 async function findDapPath(extensionUri: vscode.Uri, output?: vscode.OutputChannel): Promise<string> {
