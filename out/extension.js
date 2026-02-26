@@ -283,6 +283,19 @@ class LabwiredConfigurationProvider {
                     }
                 }
             }
+            const rootPath = folder === null || folder === void 0 ? void 0 : folder.uri.fsPath;
+            if (typeof config.program === 'string') {
+                config.program = resolveDebugPath(config.program, rootPath);
+            }
+            if (typeof config.systemConfig === 'string') {
+                config.systemConfig = resolveDebugPath(config.systemConfig, rootPath);
+            }
+            if (typeof config.mcuConfig === 'string') {
+                config.mcuConfig = resolveDebugPath(config.mcuConfig, rootPath);
+            }
+            if (typeof config.cwd === 'string') {
+                config.cwd = resolveDebugPath(config.cwd, rootPath);
+            }
             if (!config.program || !(yield this.checkFile(config.program))) {
                 this.output.appendLine("LabWired: ERROR - No program found to debug.");
                 vscode.window.showErrorMessage("Cannot find a program to debug. Please ensure you have a Cargo.toml or Makefile and have built the project.");
@@ -708,6 +721,23 @@ function fileExists(filePath) {
             return false;
         }
     });
+}
+function resolveDebugPath(template, workspaceRoot) {
+    var _a, _b;
+    let resolved = template;
+    const root = workspaceRoot || ((_b = (_a = vscode.workspace.workspaceFolders) === null || _a === void 0 ? void 0 : _a[0]) === null || _b === void 0 ? void 0 : _b.uri.fsPath) || '';
+    if (root) {
+        resolved = resolved
+            .replace(/\$\{workspaceFolder\}/g, root)
+            .replace(/\$\{workspaceRoot\}/g, root)
+            .replace(/\$\{workspaceFolderBasename\}/g, path.basename(root));
+    }
+    resolved = resolved.replace(/\$\{env:([^}]+)\}/g, (_m, name) => { var _a; return (_a = process.env[name]) !== null && _a !== void 0 ? _a : ''; });
+    resolved = resolved.replace(/\$\{pathSeparator\}/g, path.sep);
+    if (root && !path.isAbsolute(resolved)) {
+        resolved = path.resolve(root, resolved);
+    }
+    return resolved;
 }
 function findDapPath(extensionUri, output) {
     return __awaiter(this, void 0, void 0, function* () {
