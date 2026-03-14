@@ -231,13 +231,45 @@ export async function importSvdWizard(): Promise<void> {
 }
 
 async function getCliPath(): Promise<string | undefined> {
-    // In dev env, default to one location
-    const devPath = "/home/andrii/Projects/labwired/core/target/debug/labwired";
-    if (await fileExists(devPath)) return devPath;
+    const config = vscode.workspace.getConfiguration('labwired');
+    const configuredPath = config.get<string>('cliPath');
+    if (configuredPath && await fileExists(configuredPath)) {
+        return configuredPath;
+    }
 
-    const releasePath = "/home/andrii/Projects/labwired/core/target/release/labwired";
-    if (await fileExists(releasePath)) return releasePath;
+    const binName = process.platform === 'win32' ? 'labwired.exe' : 'labwired';
+    const extensionPath = vscode.extensions.getExtension('w1ne.labwired-vscode')?.extensionUri.fsPath;
+    const workspaces = vscode.workspace.workspaceFolders || [];
+    const candidates: string[] = [];
 
-    // TODO: Add bundled path search for production extension
+    if (extensionPath) {
+        candidates.push(path.join(extensionPath, 'dist', 'bin', binName));
+        candidates.push(path.join(extensionPath, 'bin', binName));
+    }
+
+    for (const folder of workspaces) {
+        let current = folder.uri.fsPath;
+        for (let i = 0; i < 5; i++) {
+            candidates.push(path.join(current, binName));
+            candidates.push(path.join(current, 'target', 'debug', binName));
+            candidates.push(path.join(current, 'target', 'release', binName));
+            candidates.push(path.join(current, 'core', 'target', 'debug', binName));
+            candidates.push(path.join(current, 'core', 'target', 'release', binName));
+            const parent = path.dirname(current);
+            if (parent === current) break;
+            current = parent;
+        }
+    }
+
+    for (const entry of (process.env.PATH || '').split(path.delimiter).filter(Boolean)) {
+        candidates.push(path.join(entry, binName));
+    }
+
+    for (const candidate of candidates) {
+        if (await fileExists(candidate)) {
+            return candidate;
+        }
+    }
+
     return undefined;
 }

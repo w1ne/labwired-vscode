@@ -230,15 +230,43 @@ function importSvdWizard() {
 }
 exports.importSvdWizard = importSvdWizard;
 function getCliPath() {
+    var _a;
     return __awaiter(this, void 0, void 0, function* () {
-        // In dev env, default to one location
-        const devPath = "/home/andrii/Projects/labwired/core/target/debug/labwired";
-        if (yield fileExists(devPath))
-            return devPath;
-        const releasePath = "/home/andrii/Projects/labwired/core/target/release/labwired";
-        if (yield fileExists(releasePath))
-            return releasePath;
-        // TODO: Add bundled path search for production extension
+        const config = vscode.workspace.getConfiguration('labwired');
+        const configuredPath = config.get('cliPath');
+        if (configuredPath && (yield fileExists(configuredPath))) {
+            return configuredPath;
+        }
+        const binName = process.platform === 'win32' ? 'labwired.exe' : 'labwired';
+        const extensionPath = (_a = vscode.extensions.getExtension('w1ne.labwired-vscode')) === null || _a === void 0 ? void 0 : _a.extensionUri.fsPath;
+        const workspaces = vscode.workspace.workspaceFolders || [];
+        const candidates = [];
+        if (extensionPath) {
+            candidates.push(path.join(extensionPath, 'dist', 'bin', binName));
+            candidates.push(path.join(extensionPath, 'bin', binName));
+        }
+        for (const folder of workspaces) {
+            let current = folder.uri.fsPath;
+            for (let i = 0; i < 5; i++) {
+                candidates.push(path.join(current, binName));
+                candidates.push(path.join(current, 'target', 'debug', binName));
+                candidates.push(path.join(current, 'target', 'release', binName));
+                candidates.push(path.join(current, 'core', 'target', 'debug', binName));
+                candidates.push(path.join(current, 'core', 'target', 'release', binName));
+                const parent = path.dirname(current);
+                if (parent === current)
+                    break;
+                current = parent;
+            }
+        }
+        for (const entry of (process.env.PATH || '').split(path.delimiter).filter(Boolean)) {
+            candidates.push(path.join(entry, binName));
+        }
+        for (const candidate of candidates) {
+            if (yield fileExists(candidate)) {
+                return candidate;
+            }
+        }
         return undefined;
     });
 }
