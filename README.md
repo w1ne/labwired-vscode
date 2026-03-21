@@ -9,6 +9,11 @@ Official VS Code extension for the **LabWired Firmware Simulation Platform**.
 *   **Register Inspector**: View and modify peripheral registers with bit-field expansion.
 *   **Memory View**: Inspect and edit memory in Hex/ASCII.
 *   **Debug Adapter**: Connects to the `labwired` GDB/DAP server.
+*   **Conditional Breakpoints**: Set breakpoints with expressions like `R0 == 0x42` or `R3 > 100`.
+*   **Data Breakpoints (Watchpoints)**: Break on memory writes to specific addresses.
+*   **Watch Expressions**: Evaluate register arithmetic (`R0 + 4`) and memory dereferences (`*(0x20000000)`) in the watch panel.
+*   **Live Hovers**: Hover over register names (`R0`–`R15`, `SP`, `LR`, `PC`) or hex addresses during debug to see live values.
+*   **Disassembly View**: Decoded Thumb and Thumb-2 instruction mnemonics with source line correlation.
 
 ## Development
 
