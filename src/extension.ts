@@ -20,6 +20,7 @@ import { SimulatorManager } from './simulatorManager';
 import { SystemTopologyPanel } from './topologyPanel';
 import { SimulatorViewProvider } from './simulatorView';
 import { showConfigWizard } from './configWizard';
+import { LabwiredEvaluatableExpressionProvider } from './hoverProvider';
 
 const CONFIG_SEARCH_EXCLUDES = '**/{node_modules,target,.git,dist,out}/**';
 const STOP_WORD_HINTS = new Set([
@@ -453,6 +454,14 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(
         vscode.window.registerTreeDataProvider('labwired.simulator', simulatorViewProvider)
     );
+    // Register hover provider for live variable inspection during debug
+    context.subscriptions.push(
+        vscode.languages.registerEvaluatableExpressionProvider(
+            { scheme: 'file' },
+            new LabwiredEvaluatableExpressionProvider()
+        )
+    );
+
     context.subscriptions.push(vscode.debug.onDidStartDebugSession((session) => {
         if (session.type === 'labwired') {
             simulatorManager.syncDebugSessionStatus(true);
