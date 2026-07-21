@@ -1,7 +1,7 @@
 {
     "name": "labwired-vscode",
     "displayName": "LabWired Debugger",
-    "version": "0.12.1",
+    "version": "0.12.3",
     "license": "MIT",
     "publisher": "w1ne",
     "description": "LabWired Debug Adapter for VS Code",
@@ -18,9 +18,20 @@
         "workspaceContains:**/Makefile"
     ],
     "contributes": {
+        "authentication": [
+            {
+                "id": "labwired",
+                "label": "LabWired"
+            }
+        ],
         "configuration": {
             "title": "LabWired",
             "properties": {
+                "labwired.apiUrl": {
+                    "type": "string",
+                    "default": "https://api.labwired.com",
+                    "description": "LabWired hosted API base URL for sign-in and hosted features."
+                },
                 "labwired.demoUi.mode": {
                     "type": "string",
                     "enum": [
@@ -40,6 +51,11 @@
                     "type": "string",
                     "default": "",
                     "description": "Path to the labwired CLI binary used by the configuration wizard."
+                },
+                "labwired.cliVersion": {
+                    "type": "string",
+                    "default": "v0.18.0",
+                    "description": "LabWired CLI release tag the extension downloads."
                 }
             }
         },
@@ -206,6 +222,14 @@
                 "command": "labwired.configureProject",
                 "title": "Configure Project...",
                 "icon": "$(gear)"
+            },
+            {
+                "command": "labwired.signIn",
+                "title": "LabWired: Sign in"
+            },
+            {
+                "command": "labwired.signOut",
+                "title": "LabWired: Sign out"
             }
         ],
         "viewsContainers": {
@@ -267,6 +291,7 @@
     },
     "devDependencies": {
         "@types/glob": "^8.1.0",
+        "@types/js-yaml": "^4.0.9",
         "@types/mocha": "^10.0.1",
         "@types/node": "^16.x",
         "@types/vscode": "^1.75.0",
@@ -274,5 +299,8 @@
         "glob": "^8.1.0",
         "mocha": "^10.2.0",
         "typescript": "^4.9.5"
+    },
+    "dependencies": {
+        "js-yaml": "^4.3.0"
     }
 }
