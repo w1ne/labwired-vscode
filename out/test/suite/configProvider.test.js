@@ -12,6 +12,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const assert = require("assert");
 const vscode = require("vscode");
 const path = require("path");
+const os = require("os");
+const fs = require("fs");
 const extension_1 = require("../../extension");
 suite('LabwiredConfigurationProvider Test Suite', () => {
     let mockOutputChannel;
@@ -32,24 +34,41 @@ suite('LabwiredConfigurationProvider Test Suite', () => {
         };
         mockCheckFile = (p) => __awaiter(void 0, void 0, void 0, function* () { return true; });
     });
-    test('resolveDebugConfiguration should set defaults and auto-detect', () => __awaiter(void 0, void 0, void 0, function* () {
-        const provider = new extension_1.LabwiredConfigurationProvider(mockOutputChannel, mockCpModule, mockCheckFile);
-        const config = {
-            type: '',
-            name: '',
-            request: ''
-        };
-        const mockFolder = {
-            uri: vscode.Uri.file('/mock/root'),
-            name: 'mock',
-            index: 0
-        };
-        const resolved = yield provider.resolveDebugConfiguration(mockFolder, config);
-        assert.strictEqual(resolved === null || resolved === void 0 ? void 0 : resolved.type, 'labwired');
-        assert.strictEqual(resolved === null || resolved === void 0 ? void 0 : resolved.name, 'LabWired: Launch');
-        assert.strictEqual(resolved === null || resolved === void 0 ? void 0 : resolved.request, 'launch');
-        assert.strictEqual(resolved === null || resolved === void 0 ? void 0 : resolved.stopOnEntry, false);
-        assert.ok(resolved === null || resolved === void 0 ? void 0 : resolved.program.includes('firmware'));
+    test('resolveDebugConfiguration sets defaults and derives program/systemConfig from .labwired/lab.yaml', () => __awaiter(void 0, void 0, void 0, function* () {
+        // New contract: an empty launch config gets its program + systemConfig from
+        // the one-file .labwired/lab.yaml — no hardcoded target-triple guess.
+        const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'lw-cfg-'));
+        fs.mkdirSync(path.join(tmp, '.labwired'), { recursive: true });
+        fs.writeFileSync(path.join(tmp, '.labwired', 'lab.yaml'), 'schema_version: "1.0"\ninputs:\n  firmware: ../target/firmware\n  system: ../system.yaml\n');
+        try {
+            const provider = new extension_1.LabwiredConfigurationProvider(mockOutputChannel, mockCpModule, mockCheckFile);
+            const config = { type: '', name: '', request: '' };
+            const mockFolder = { uri: vscode.Uri.file(tmp), name: 'mock', index: 0 };
+            const resolved = yield provider.resolveDebugConfiguration(mockFolder, config);
+            assert.strictEqual(resolved === null || resolved === void 0 ? void 0 : resolved.type, 'labwired');
+            assert.strictEqual(resolved === null || resolved === void 0 ? void 0 : resolved.name, 'LabWired: Launch');
+            assert.strictEqual(resolved === null || resolved === void 0 ? void 0 : resolved.request, 'launch');
+            assert.strictEqual(resolved === null || resolved === void 0 ? void 0 : resolved.stopOnEntry, false);
+            assert.ok(resolved === null || resolved === void 0 ? void 0 : resolved.program.includes('firmware'));
+            assert.ok(resolved === null || resolved === void 0 ? void 0 : resolved.systemConfig.includes('system.yaml'));
+        }
+        finally {
+            fs.rmSync(tmp, { recursive: true, force: true });
+        }
+    }));
+    test('resolveDebugConfiguration returns undefined when no program and no lab.yaml', () => __awaiter(void 0, void 0, void 0, function* () {
+        // Honest behavior: without a lab.yaml we no longer invent a hardcoded firmware path.
+        const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'lw-cfg-empty-'));
+        try {
+            const provider = new extension_1.LabwiredConfigurationProvider(mockOutputChannel, mockCpModule, mockCheckFile);
+            const config = { type: '', name: '', request: '' };
+            const mockFolder = { uri: vscode.Uri.file(tmp), name: 'mock', index: 0 };
+            const resolved = yield provider.resolveDebugConfiguration(mockFolder, config);
+            assert.strictEqual(resolved, undefined);
+        }
+        finally {
+            fs.rmSync(tmp, { recursive: true, force: true });
+        }
     }));
     test('resolveDebugConfiguration should auto-map Rust source', () => __awaiter(void 0, void 0, void 0, function* () {
         const provider = new extension_1.LabwiredConfigurationProvider(mockOutputChannel, mockCpModule, mockCheckFile);
