@@ -17,6 +17,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.importSvdWizard = exports.showConfigWizard = void 0;
 const vscode = require("vscode");
 const path = require("path");
+const labConfig_1 = require("./labConfig");
 function showConfigWizard() {
     return __awaiter(this, void 0, void 0, function* () {
         const workspaceFolders = vscode.workspace.workspaceFolders;
@@ -25,21 +26,8 @@ function showConfigWizard() {
             return;
         }
         const rootPath = workspaceFolders[0].uri.fsPath;
-        // 1. Select Chip
-        const chips = [
-            { label: '$(circuit-board) STM32F401', description: 'Cortex-M4, 84MHz', detail: 'Ideal for general-purpose embedded development.' },
-            { label: '$(broadcast) nRF52832', description: 'Cortex-M4, BLE', detail: 'Perfect for Bluetooth Low Energy applications.' },
-            { label: '$(microchip) RP2040', description: 'Dual-core Cortex-M0+, PIO', detail: 'Flexible I/O with Programmable I/O blocks.' },
-            { label: '$(cpu) RISC-V Generic', description: '32-bit RISC-V Core', detail: 'Open-standard architecture simulation.' },
-        ];
-        const selectedChip = yield vscode.window.showQuickPick(chips, {
-            placeHolder: 'Select target MCU/Architecture',
-            title: 'LabWired: Configuration Wizard (1/3)'
-        });
-        if (!selectedChip)
-            return;
-        // 2. Select Firmware
-        // Attempt to find ELF files
+        const labDir = path.join(rootPath, '.labwired');
+        // 1. Pick the firmware ELF.
         const elfFiles = yield vscode.workspace.findFiles('**/target/**/debug/*', '**/node_modules/**');
         const elfItems = elfFiles.map(f => ({
             label: path.basename(f.fsPath),
@@ -50,41 +38,32 @@ function showConfigWizard() {
         if (elfItems.length > 0) {
             selectedElf = yield vscode.window.showQuickPick(elfItems, {
                 placeHolder: 'Select firmware ELF file',
-                title: 'LabWired: Configuration Wizard (2/3)'
+                title: 'LabWired: Configure Project'
             });
         }
         if (!selectedElf) {
             const manualPath = yield vscode.window.showInputBox({
-                prompt: 'Enter path to firmware ELF file (relative to root)',
-                placeHolder: 'e.g. build/firmware.elf',
-                title: 'LabWired: Configuration Wizard (2/3)'
+                prompt: 'Enter path to firmware ELF file (relative to workspace root)',
+                placeHolder: 'e.g. target/thumbv7em-none-eabi/release/firmware',
+                title: 'LabWired: Configure Project'
             });
             if (!manualPath)
                 return;
-            selectedElf = { uri: vscode.Uri.file(path.join(rootPath, manualPath)) };
+            selectedElf = { uri: vscode.Uri.file(path.resolve(rootPath, manualPath)) };
         }
-        // 3. System Config (Optional)
-        const hasSystemYaml = yield fileExists(path.join(rootPath, 'system.yaml'));
-        let useSystem = false;
-        if (hasSystemYaml) {
-            const choice = yield vscode.window.showQuickPick(['Yes', 'No'], {
-                placeHolder: 'Use existing system.yaml?',
-                title: 'LabWired: Configuration Wizard (3/3)'
-            });
-            useSystem = choice === 'Yes';
-        }
-        // 4. Generate launch.json
-        const launchConfig = {
-            name: `LabWired: ${selectedChip.label}`,
-            type: 'labwired',
-            request: 'launch',
-            program: vscode.workspace.asRelativePath(selectedElf.uri),
-            systemConfig: useSystem ? 'system.yaml' : undefined,
-            stopOnEntry: true
+        // 2. Detect an optional system.yaml at the workspace root.
+        const systemAbs = path.join(rootPath, 'system.yaml');
+        const hasSystemYaml = yield fileExists(systemAbs);
+        // 3. Write .labwired/lab.yaml with inputs relative to .labwired/.
+        const cfg = {
+            schema_version: '1.0',
+            inputs: Object.assign({ firmware: path.relative(labDir, selectedElf.uri.fsPath) }, (hasSystemYaml ? { system: path.relative(labDir, systemAbs) } : {})),
+            limits: { max_steps: 100000 },
+            assertions: [{ expected_stop_reason: 'max_steps' }],
         };
-        yield updateLaunchConfig(workspaceFolders[0], launchConfig);
-        vscode.window.showInformationMessage("LabWired: Configuration successful! Check .vscode/launch.json");
-        // 5. Offer SVD Import (Asset Foundry)
+        const written = (0, labConfig_1.writeLabConfig)(rootPath, cfg);
+        vscode.window.showInformationMessage(`LabWired: Wrote ${vscode.workspace.asRelativePath(written)}`);
+        // 4. Offer SVD Import (Asset Foundry).
         const importSvd = yield vscode.window.showQuickPick(['Yes', 'No'], {
             placeHolder: 'Do you want to import chip peripherals (SVD) now?',
             title: 'LabWired: Asset Foundry Setup'
@@ -95,30 +74,6 @@ function showConfigWizard() {
     });
 }
 exports.showConfigWizard = showConfigWizard;
-function updateLaunchConfig(folder, config) {
-    return __awaiter(this, void 0, void 0, function* () {
-        const launchPath = path.join(folder.uri.fsPath, '.vscode', 'launch.json');
-        const launchUri = vscode.Uri.file(launchPath);
-        let launchJson = { version: "0.2.0", configurations: [] };
-        try {
-            const content = yield vscode.workspace.fs.readFile(launchUri);
-            launchJson = JSON.parse(content.toString());
-        }
-        catch (_a) {
-            // file doesn't exist or is invalid
-        }
-        // Replace or add configuration
-        const existingIndex = launchJson.configurations.findIndex((c) => c.name === config.name);
-        if (existingIndex >= 0) {
-            launchJson.configurations[existingIndex] = config;
-        }
-        else {
-            launchJson.configurations.push(config);
-        }
-        const newContent = JSON.stringify(launchJson, null, 4);
-        yield vscode.workspace.fs.writeFile(launchUri, Buffer.from(newContent));
-    });
-}
 function fileExists(filePath) {
     return __awaiter(this, void 0, void 0, function* () {
         try {
