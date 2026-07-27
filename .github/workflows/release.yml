@@ -1,0 +1,75 @@
+name: Release
+
+# Publishing is tag-driven and deliberately manual to start: push a `vX.Y.Z`
+# tag and this builds, verifies, and publishes that exact commit.
+#
+# Requires the repository secret VSCE_PAT — an Azure DevOps personal access
+# token scoped to Marketplace → Manage, belonging to the `w1ne` publisher.
+# Without it the publish step is skipped and the .vsix is still attached to the
+# GitHub release, so a tag never fails purely for want of a credential.
+on:
+  push:
+    tags: ['v[0-9]+.[0-9]+.[0-9]+']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: Package and publish
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - run: npm ci
+
+      # Never publish something that has not passed the same gates a PR does.
+      - name: Unit tests
+        run: npm run test:unit
+
+      - name: Extension host tests
+        run: xvfb-run -a npm test
+
+      # A tag that disagrees with package.json produces a Marketplace listing
+      # whose version does not match the source it claims to come from.
+      - name: Check the tag matches package.json
+        if: startsWith(github.ref, 'refs/tags/')
+        run: |
+          TAG="${GITHUB_REF_NAME#v}"
+          PKG="$(node -p "require('./package.json').version")"
+          if [ "$TAG" != "$PKG" ]; then
+            echo "::error::tag v$TAG does not match package.json version $PKG"
+            exit 1
+          fi
+
+      - name: Package
+        run: npx @vscode/vsce package --out labwired-vscode.vsix
+
+      - name: Verify the package contains the compiled extension
+        run: |
+          npx @vscode/vsce ls --tree | tee contents.txt
+          grep -q 'extension.js' contents.txt \
+            || { echo "::error::out/extension.js missing from the .vsix"; exit 1; }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: labwired-vscode-vsix
+          path: labwired-vscode.vsix
+
+      - name: Publish to the VS Code Marketplace
+        if: env.VSCE_PAT != ''
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
+        run: npx @vscode/vsce publish --packagePath labwired-vscode.vsix
+
+      - name: Attach the .vsix to the GitHub release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: labwired-vscode.vsix

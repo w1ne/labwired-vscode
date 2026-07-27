@@ -1,15 +1,17 @@
 {
     "name": "labwired-vscode",
     "displayName": "LabWired Debugger",
-    "version": "0.12.3",
+    "version": "0.13.0",
     "license": "MIT",
     "publisher": "w1ne",
-    "description": "LabWired Debug Adapter for VS Code",
+    "description": "Debug firmware on a simulated chip: breakpoints, stepping, and every register \u2014 no hardware required.",
     "engines": {
         "vscode": "^1.75.0"
     },
     "categories": [
-        "Debuggers"
+        "Debuggers",
+        "Visualization",
+        "Testing"
     ],
     "activationEvents": [
         "onDebugResolve:labwired",
@@ -298,5 +300,30 @@
     },
     "dependencies": {
         "js-yaml": "^4.3.0"
+    },
+    "icon": "media/icon.png",
+    "keywords": [
+        "embedded",
+        "firmware",
+        "simulator",
+        "debugger",
+        "cortex-m",
+        "risc-v",
+        "esp32",
+        "stm32",
+        "nrf52",
+        "arm"
+    ],
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/w1ne/labwired-vscode.git"
+    },
+    "bugs": {
+        "url": "https://github.com/w1ne/labwired-vscode/issues"
+    },
+    "homepage": "https://labwired.com",
+    "galleryBanner": {
+        "color": "#14161c",
+        "theme": "dark"
     }
 }
