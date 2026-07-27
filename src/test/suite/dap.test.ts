@@ -1,14 +1,28 @@
 import * as assert from 'assert';
 import * as vscode from 'vscode';
 import * as path from 'path';
+import * as fs from 'fs';
 
 suite('DAP E2E Test Suite', function () {
     this.timeout(60000); // E2E tests can be slow
 
-    test('Should launch and stop at entry', async () => {
+    test('Should launch and stop at entry', async function () {
         const root = path.resolve(__dirname, '../../../../');
         const dapPath = process.env.LABWIRED_DAP_BIN || path.join(root, 'core/target/release/labwired-dap');
         const firmwarePath = path.join(root, 'core/target/thumbv7m-none-eabi/release/demo-blinky');
+
+        // This needs a built debug adapter and a cross-compiled firmware, neither
+        // of which exists on a clean checkout — it runs against a sibling
+        // labwired-core build tree. SKIP loudly rather than sitting through a
+        // 60-second timeout and reporting a failure that says nothing about the
+        // code: a red test whose only cause is a missing artifact trains people
+        // to ignore the suite. Set LABWIRED_DAP_BIN to point at your own build.
+        for (const [label, file] of [['debug adapter', dapPath], ['firmware', firmwarePath]] as const) {
+            if (!fs.existsSync(file)) {
+                console.log(`DAP E2E skipped: ${label} not found at ${file}`);
+                this.skip();
+            }
+        }
 
         // We need to ensure the extension is active
         const ext = vscode.extensions.getExtension('w1ne.labwired-vscode');

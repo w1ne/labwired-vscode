@@ -33,6 +33,7 @@ const configWizard_1 = require("./configWizard");
 const cli_1 = require("./cli");
 const labConfig_1 = require("./labConfig");
 const firmware_1 = require("./firmware");
+const registersPanel_1 = require("./registersPanel");
 const auth_1 = require("./auth");
 function handleLabwiredDebugEvent(e, deps) {
     var _a, _b, _c;
@@ -77,6 +78,7 @@ function handleLabwiredDebugEvent(e, deps) {
         deps.peripheralProvider.refresh();
         deps.rtosProvider.refresh();
         deps.memoryInspectorPanel.refresh();
+        deps.registersPanel.refresh();
         deps.traceListPanel.refresh();
         deps.profilingPanel.refresh();
         return;
@@ -86,6 +88,7 @@ function handleLabwiredDebugEvent(e, deps) {
         deps.peripheralProvider.refresh();
         deps.rtosProvider.refresh();
         deps.memoryInspectorPanel.refresh();
+        deps.registersPanel.refresh();
         deps.traceListPanel.refresh();
         deps.profilingPanel.refresh();
     }
@@ -175,13 +178,20 @@ class LabwiredConfigurationProvider {
             }
             if (!config.program || !(yield this.checkFile(config.program))) {
                 this.output.appendLine('LabWired: no firmware found to debug.');
-                const choice = yield vscode.window.showErrorMessage('LabWired: no built firmware found. Build the project first, or set it up so LabWired knows which ELF to run.', 'Set up LabWired', 'Open Output');
-                if (choice === 'Set up LabWired') {
-                    yield vscode.commands.executeCommand('labwired.configureProject');
-                }
-                else if (choice === 'Open Output') {
-                    this.output.show();
-                }
+                // Deliberately NOT awaited. Awaiting would hold the launch open until
+                // the user clicks something — the session should abort now, and the
+                // offer to fix it is an aside, not a gate.
+                void vscode.window
+                    .showErrorMessage('LabWired: no built firmware found. Build the project first, or set it up so LabWired knows which ELF to run.', 'Set up LabWired', 'Open Output')
+                    .then((choice) => {
+                    if (choice === 'Set up LabWired') {
+                        return vscode.commands.executeCommand('labwired.configureProject');
+                    }
+                    if (choice === 'Open Output') {
+                        this.output.show();
+                    }
+                    return undefined;
+                });
                 return undefined; // abort launch
             }
             // Auto-detect Rust source for standard library to avoid "File not found" errors
@@ -408,6 +418,11 @@ function activate(context) {
     context.subscriptions.push(vscode.commands.registerCommand('labwired.showTraceList', () => {
         traceListPanel.show();
     }));
+    // Registers Panel — CPU core registers + decoded peripheral registers.
+    const registersPanel = new registersPanel_1.RegistersPanel(context);
+    context.subscriptions.push(vscode.commands.registerCommand('labwired.showRegisters', () => {
+        void registersPanel.show();
+    }));
     // Profiling Panel
     const profilingPanel = new profilingPanel_1.ProfilingPanel(context);
     context.subscriptions.push(vscode.commands.registerCommand('labwired.showProfiling', () => {
@@ -425,6 +440,7 @@ function activate(context) {
         peripheralProvider,
         rtosProvider,
         memoryInspectorPanel,
+        registersPanel,
         traceListPanel,
         profilingPanel,
         outputChannel,
