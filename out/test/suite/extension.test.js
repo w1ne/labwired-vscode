@@ -29,9 +29,17 @@ suite('Extension Test Suite', () => {
     // We can't easily unit test the DescriptorFactory without mocking vscode,
     // but we can verify that the command registered exists.
     test('Commands should be registered', () => __awaiter(void 0, void 0, void 0, function* () {
+        // Activate explicitly. This used to pass by accident: `activationEvents`
+        // contained `"*"`, so the extension was already running by the time any
+        // test looked. Now that it activates on real triggers, a test that wants
+        // its commands has to ask for it.
+        const extension = vscode.extensions.getExtension('w1ne.labwired-vscode');
+        assert.ok(extension, 'extension not found');
+        yield extension.activate();
         const commands = yield vscode.commands.getCommands(true);
         assert.ok(commands.includes('labwired.compileAndRun'));
         assert.ok(commands.includes('labwired.showDashboard'));
+        assert.ok(commands.includes('labwired.showRegisters'));
     }));
 });
 //# sourceMappingURL=extension.test.js.map

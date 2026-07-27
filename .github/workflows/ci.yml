@@ -1,0 +1,68 @@
+name: CI
+
+# The extension had no CI at all: nothing compiled it, and nothing ran its
+# tests. A test nobody runs is decoration, so this exists before anything is
+# published to the Marketplace from this repo.
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    name: Compile and unit-test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Compile
+        run: npm run compile
+
+      # These run headless, with no extension host. The suite under
+      # src/test/suite needs a real VS Code (see the `integration` job) but
+      # everything under src/test/unit is plain Node and must always run.
+      - name: Unit tests
+        run: npm run test:unit
+
+      - name: Package the extension
+        run: npx @vscode/vsce package --no-git-tag-version --out labwired-vscode.vsix
+
+      # Publishing a .vsix that is missing its compiled output produces an
+      # extension that installs and then silently does nothing.
+      - name: Verify the package contains the compiled extension
+        run: |
+          npx @vscode/vsce ls --tree > package-contents.txt
+          cat package-contents.txt
+          grep -q 'extension.js' package-contents.txt \
+            || { echo "::error::out/extension.js missing from the .vsix"; exit 1; }
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: labwired-vscode-vsix
+          path: labwired-vscode.vsix
+
+  integration:
+    name: Extension host tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      # @vscode/test-electron downloads a real VS Code and needs a display.
+      - name: Run extension tests under Xvfb
+        run: xvfb-run -a npm test

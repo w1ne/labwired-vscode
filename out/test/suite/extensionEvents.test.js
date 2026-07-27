@@ -15,6 +15,7 @@ function createDeps(status = 'Running') {
             peripherals: 0,
             rtos: 0,
             memory: 0,
+            registers: 0,
             trace: 0,
             profiling: 0,
         }
@@ -40,6 +41,9 @@ function createDeps(status = 'Running') {
         },
         memoryInspectorPanel: {
             refresh: () => { calls.refreshes.memory += 1; }
+        },
+        registersPanel: {
+            refresh: () => { calls.refreshes.registers += 1; }
         },
         traceListPanel: {
             refresh: () => { calls.refreshes.trace += 1; }
@@ -105,6 +109,7 @@ suite('Extension Debug Event Handling', () => {
         assert.strictEqual(calls.refreshes.peripherals, 2);
         assert.strictEqual(calls.refreshes.rtos, 2);
         assert.strictEqual(calls.refreshes.memory, 2);
+        assert.strictEqual(calls.refreshes.registers, 2);
         assert.strictEqual(calls.refreshes.trace, 2);
         assert.strictEqual(calls.refreshes.profiling, 2);
     });

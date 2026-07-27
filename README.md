@@ -1,6 +1,29 @@
-# LabWired VS Code Extension
+# LabWired for VS Code
 
-Official VS Code extension for the **LabWired Firmware Simulation Platform**.
+Debug firmware on a **simulated chip** — breakpoints, stepping, and every register — with no
+hardware attached.
+
+## Get started
+
+1. Install the extension.
+2. Open a firmware project and build it.
+3. Press **F5**.
+
+That is the whole setup. No `launch.json` to write: the extension resolves the ELF from
+`.labwired/lab.yaml` if the project has one, and otherwise finds your build. The simulator
+and debug adapter download themselves on first use.
+
+## What you get
+
+| | |
+|---|---|
+| **Breakpoints and stepping** | Including *step back* — the simulator can run in reverse. |
+| **Every register** | CPU core registers and decoded peripheral registers, searchable, with **changes since the last stop highlighted**. `LabWired: Show Registers`. |
+| **Memory** | Hex/ASCII inspect and edit. Unmapped address space is reported as unreadable rather than shown as zeros. |
+| **Peripherals** | Register names and bit-fields for the chips that can decode them; peripherals with no schema say so rather than appearing empty. |
+| **Timeline, trace, profiler** | Execution history, instruction trace, and where the cycles went. |
+
+Inspecting is passive: reading a peripheral cannot perturb the firmware you are debugging.
 
 ## Run in LabWired — the one-file contract
 
@@ -48,14 +71,6 @@ standard OAuth with PKCE: your browser opens, you approve, and VS Code receives 
   `https://api.labwired.com`).
 
 Sign-in tokens are LabWired account tokens and are **not** used for local runs, which stay free.
-
-## Features
-*   **Command Center**: Live telemetry + board overview from `system.yaml`.
-*   **Topology View**: Expanded system topology rendering for MCU and peripherals.
-*   **Timeline View**: Visualize execution history (PC, Interrupts) over time.
-*   **Register Inspector**: View and modify peripheral registers with bit-field expansion.
-*   **Memory View**: Inspect and edit memory in Hex/ASCII.
-*   **Debug Adapter**: Connects to the `labwired` GDB/DAP server (F5 debugging).
 
 ## Development
 
