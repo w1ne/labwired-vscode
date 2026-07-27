@@ -14,13 +14,17 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.runTest = exports.resolveCli = exports.CLI_VERSION = void 0;
+exports.runTest = exports.resolveDap = exports.resolveCli = exports.DAP_BIN = exports.CLI_BIN = exports.CLI_VERSION = void 0;
 const vscode = require("vscode");
 const path = require("path");
 const fs = require("fs");
 const https = require("https");
 const child_process_1 = require("child_process");
-exports.CLI_VERSION = 'v0.18.0';
+exports.CLI_VERSION = 'v0.19.3';
+/** The simulator/test-runner CLI. */
+exports.CLI_BIN = 'labwired';
+/** The Debug Adapter the extension spawns for F5. Ships in the SAME tarball. */
+exports.DAP_BIN = 'labwired-dap';
 // Maps Node's process.platform/process.arch onto the release-asset platform slug.
 const PLATFORM_ASSETS = {
     'darwin/arm64': 'darwin-aarch64',
@@ -32,11 +36,12 @@ function cliVersion() {
     const configured = vscode.workspace.getConfiguration('labwired').get('cliVersion');
     return configured && configured.trim().length > 0 ? configured.trim() : exports.CLI_VERSION;
 }
-function binName() {
-    return process.platform === 'win32' ? 'labwired.exe' : 'labwired';
+function binName(bin) {
+    return process.platform === 'win32' ? `${bin}.exe` : bin;
 }
-// Cache of a resolved CLI path for the lifetime of the extension host.
-let cachedCliPath;
+// Cache of resolved binary paths, keyed by bare binary name, for the lifetime
+// of the extension host.
+const cachedPaths = new Map();
 function log(output, msg) {
     if (output) {
         output.appendLine(`LabWired [cli]: ${msg}`);
@@ -50,26 +55,22 @@ function existsFile(p) {
         return false;
     }
 }
-function onPath(output) {
-    // Try running `labwired --version`; if that succeeds it is on PATH.
+function onPath(bin, output) {
+    // Locate via which/where. We deliberately do NOT probe with `--version`:
+    // labwired-dap is a stdio DAP server that does not implement it, and
+    // spawning it just to test would leave it waiting on stdin.
     try {
-        const probe = (0, child_process_1.spawnSync)(binName(), ['--version'], { encoding: 'utf8' });
-        if (probe.status === 0) {
-            // Resolve the concrete location via which/where.
-            const locator = process.platform === 'win32' ? 'where' : 'which';
-            const found = (0, child_process_1.spawnSync)(locator, [binName()], { encoding: 'utf8' });
-            if (found.status === 0) {
-                const first = found.stdout.split(/\r?\n/).map((s) => s.trim()).filter(Boolean)[0];
-                if (first && existsFile(first)) {
-                    return first;
-                }
+        const locator = process.platform === 'win32' ? 'where' : 'which';
+        const found = (0, child_process_1.spawnSync)(locator, [binName(bin)], { encoding: 'utf8' });
+        if (found.status === 0) {
+            const first = found.stdout.split(/\r?\n/).map((s) => s.trim()).filter(Boolean)[0];
+            if (first && existsFile(first)) {
+                return first;
             }
-            // Fall back to the bare name; spawn will resolve it via PATH.
-            return binName();
         }
     }
     catch (e) {
-        log(output, `PATH probe failed: ${e}`);
+        log(output, `PATH probe for ${bin} failed: ${e}`);
     }
     return undefined;
 }
@@ -104,8 +105,8 @@ function downloadTo(url, dest, output) {
         request(url, 0);
     });
 }
-// Recursively find a file named `labwired` (or labwired.exe) inside a directory.
-function findBinary(dir) {
+// Recursively find a file with the given binary name inside a directory.
+function findBinary(dir, bin) {
     let entries;
     try {
         entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -116,21 +117,29 @@ function findBinary(dir) {
     for (const entry of entries) {
         const full = path.join(dir, entry.name);
         if (entry.isDirectory()) {
-            const nested = findBinary(full);
+            const nested = findBinary(full, bin);
             if (nested) {
                 return nested;
             }
         }
-        else if (entry.name === binName()) {
+        else if (entry.name === binName(bin)) {
             return full;
         }
     }
     return undefined;
 }
-function downloadCli(context, output) {
+// In-flight download promise, so a Run and an F5 racing on first use share ONE
+// download of the tarball rather than both fetching it and clobbering each other.
+let inFlightDownload;
+/**
+ * Download and extract the release tarball, returning the directory it was
+ * extracted into. The tarball carries BOTH `labwired` and `labwired-dap`, so a
+ * single download serves the Run button and the debugger alike.
+ */
+function downloadRelease(context, output) {
     return __awaiter(this, void 0, void 0, function* () {
         if (process.platform === 'win32') {
-            throw new Error('Set labwired.cliPath — Windows CLI auto-download is not available yet.');
+            throw new Error('Set labwired.cliPath — Windows auto-download is not available yet.');
         }
         const platform = PLATFORM_ASSETS[`${process.platform}/${process.arch}`];
         if (!platform) {
@@ -139,68 +148,99 @@ function downloadCli(context, output) {
         const version = cliVersion();
         const destDir = path.join(context.globalStorageUri.fsPath, 'cli', version);
         fs.mkdirSync(destDir, { recursive: true });
-        // If a previous download already extracted the binary, reuse it.
-        const existing = findBinary(destDir);
-        if (existing && existsFile(existing)) {
-            return existing;
-        }
         const asset = `labwired-${version}-${platform}.tar.gz`;
         const url = `https://github.com/w1ne/labwired-core/releases/download/${version}/${asset}`;
         const tarball = path.join(destDir, asset);
         log(output, `Downloading ${url}`);
         yield vscode.window.withProgress({
             location: vscode.ProgressLocation.Notification,
-            title: `LabWired: Downloading CLI ${version}...`,
+            title: `LabWired: Downloading simulator ${version}...`,
             cancellable: false,
         }, () => downloadTo(url, tarball, output));
         log(output, `Extracting ${tarball}`);
         const untar = (0, child_process_1.spawnSync)('tar', ['-xzf', tarball, '-C', destDir], { encoding: 'utf8' });
         if (untar.status !== 0) {
-            throw new Error(`Failed to extract LabWired CLI: ${untar.stderr || untar.stdout}`);
+            throw new Error(`Failed to extract LabWired release: ${untar.stderr || untar.stdout}`);
         }
-        const binary = findBinary(destDir);
-        if (!binary) {
-            throw new Error(`LabWired CLI binary not found inside ${asset}.`);
-        }
-        fs.chmodSync(binary, 0o755);
         fs.rm(tarball, { force: true }, () => undefined);
-        return binary;
+        return destDir;
     });
 }
-function resolveCli(context, output) {
+/**
+ * Resolve one of the release binaries, in order: explicit setting → bundled with
+ * the extension → on PATH → downloaded release tarball (cached in globalStorage).
+ *
+ * `settingKey` is the `labwired.*` setting that pins an explicit path for this
+ * binary; it always wins so a developer can point at their own build.
+ */
+function resolveBinary(bin, settingKey, context, output) {
     return __awaiter(this, void 0, void 0, function* () {
         // 1. Explicit setting.
-        const configured = vscode.workspace.getConfiguration('labwired').get('cliPath');
+        const configured = vscode.workspace.getConfiguration('labwired').get(settingKey);
         if (configured && configured.trim().length > 0 && existsFile(configured.trim())) {
             return configured.trim();
         }
-        if (cachedCliPath && existsFile(cachedCliPath)) {
-            return cachedCliPath;
+        const cached = cachedPaths.get(bin);
+        if (cached && existsFile(cached)) {
+            return cached;
         }
+        const remember = (p) => {
+            cachedPaths.set(bin, p);
+            return p;
+        };
         // 2. Bundled with the extension.
         const extPath = context.extensionPath;
         for (const p of [
-            path.join(extPath, 'dist', 'bin', binName()),
-            path.join(extPath, 'bin', binName()),
+            path.join(extPath, 'dist', 'bin', binName(bin)),
+            path.join(extPath, 'bin', binName(bin)),
         ]) {
             if (existsFile(p)) {
-                cachedCliPath = p;
-                return p;
+                return remember(p);
             }
         }
-        // 3. On PATH.
-        const onPathResolved = onPath(output);
-        if (onPathResolved) {
-            cachedCliPath = onPathResolved;
-            return onPathResolved;
+        // 3. Already extracted by an earlier download of this same version.
+        const version = cliVersion();
+        const cacheDir = path.join(context.globalStorageUri.fsPath, 'cli', version);
+        const alreadyDownloaded = findBinary(cacheDir, bin);
+        if (alreadyDownloaded && existsFile(alreadyDownloaded)) {
+            fs.chmodSync(alreadyDownloaded, 0o755);
+            return remember(alreadyDownloaded);
         }
-        // 4. Download the release tarball.
-        const downloaded = yield downloadCli(context, output);
-        cachedCliPath = downloaded;
-        return downloaded;
+        // 4. On PATH.
+        const onPathResolved = onPath(bin, output);
+        if (onPathResolved) {
+            return remember(onPathResolved);
+        }
+        // 5. Download the release tarball (once, shared between both binaries).
+        if (!inFlightDownload) {
+            inFlightDownload = downloadRelease(context, output).finally(() => {
+                inFlightDownload = undefined;
+            });
+        }
+        const destDir = yield inFlightDownload;
+        const binary = findBinary(destDir, bin);
+        if (!binary) {
+            throw new Error(`'${bin}' not found in the LabWired ${version} release. ` +
+                `It ships from v0.19.3 onward — raise 'labwired.cliVersion', or set '${settingKey}' to your own build.`);
+        }
+        fs.chmodSync(binary, 0o755);
+        return remember(binary);
+    });
+}
+/** Resolve the `labwired` CLI (the `labwired test` runner behind the Run button). */
+function resolveCli(context, output) {
+    return __awaiter(this, void 0, void 0, function* () {
+        return resolveBinary(exports.CLI_BIN, 'cliPath', context, output);
     });
 }
 exports.resolveCli = resolveCli;
+/** Resolve the `labwired-dap` Debug Adapter that backs F5. */
+function resolveDap(context, output) {
+    return __awaiter(this, void 0, void 0, function* () {
+        return resolveBinary(exports.DAP_BIN, 'dapPath', context, output);
+    });
+}
+exports.resolveDap = resolveDap;
 function runTest(cli, opts, output) {
     return __awaiter(this, void 0, void 0, function* () {
         const args = [

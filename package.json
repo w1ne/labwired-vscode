@@ -12,8 +12,8 @@
         "Debuggers"
     ],
     "activationEvents": [
-        "*",
-        "onDebug",
+        "onDebugResolve:labwired",
+        "workspaceContains:.labwired/lab.yaml",
         "workspaceContains:**/Cargo.toml",
         "workspaceContains:**/Makefile"
     ],
@@ -45,7 +45,7 @@
                 "labwired.dapPath": {
                     "type": "string",
                     "default": "",
-                    "description": "Path to the labwired-dap binary."
+                    "description": "Path to the labwired-dap debug adapter. Leave empty to use the binary from the downloaded LabWired release."
                 },
                 "labwired.cliPath": {
                     "type": "string",
@@ -54,8 +54,8 @@
                 },
                 "labwired.cliVersion": {
                     "type": "string",
-                    "default": "v0.18.0",
-                    "description": "LabWired CLI release tag the extension downloads."
+                    "default": "v0.19.3",
+                    "description": "LabWired release tag the extension downloads. The tarball carries both the labwired CLI and the labwired-dap debug adapter (from v0.19.3 onward)."
                 }
             }
         },
@@ -67,9 +67,6 @@
                 "runtime": "node",
                 "configurationAttributes": {
                     "launch": {
-                        "required": [
-                            "program"
-                        ],
                         "properties": {
                             "program": {
                                 "type": "string",
@@ -148,16 +145,7 @@
                     {
                         "type": "labwired",
                         "request": "launch",
-                        "name": "LabWired: Launch",
-                        "program": "${workspaceFolder}/target/thumbv7m-none-eabi/debug/firmware",
-                        "stopOnEntry": true
-                    },
-                    {
-                        "type": "labwired",
-                        "request": "launch",
-                        "name": "LabWired: Launch with System Config",
-                        "program": "${workspaceFolder}/target/thumbv7m-none-eabi/debug/firmware",
-                        "systemConfig": "${workspaceFolder}/system.yaml",
+                        "name": "LabWired: Debug firmware",
                         "stopOnEntry": true
                     }
                 ]
@@ -287,7 +275,9 @@
         "vscode:prepublish": "npm run compile",
         "compile": "tsc -p ./",
         "watch": "tsc -watch -p ./",
-        "test": "npm run compile && node ./out/test/runTest.js"
+        "test": "npm run compile && node ./out/test/runTest.js",
+        "test:unit": "npm run compile && mocha out/test/unit/**/*.test.js",
+        "package": "vsce package"
     },
     "devDependencies": {
         "@types/glob": "^8.1.0",
@@ -298,7 +288,8 @@
         "@vscode/test-electron": "^2.3.0",
         "glob": "^8.1.0",
         "mocha": "^10.2.0",
-        "typescript": "^4.9.5"
+        "typescript": "^4.9.5",
+        "@vscode/vsce": "^3.2.0"
     },
     "dependencies": {
         "js-yaml": "^4.3.0"
