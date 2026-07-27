@@ -22,6 +22,7 @@ import { showConfigWizard } from './configWizard';
 import { resolveCli, resolveDap, runTest } from './cli';
 import { findLabConfig, readLabConfig, migrateLabConfig } from './labConfig';
 import { bestFirmware } from './firmware';
+import { RegistersPanel } from './registersPanel';
 import { LabwiredAuthProvider, AUTH_ID, AUTH_LABEL, SCOPES } from './auth';
 
 type DebugEventLike = {
@@ -37,6 +38,7 @@ type DebugEventDeps = {
     peripheralProvider: Pick<PeripheralProvider, 'refresh'>;
     rtosProvider: Pick<RTOSProvider, 'refresh'>;
     memoryInspectorPanel: Pick<MemoryInspectorPanel, 'refresh'>;
+    registersPanel: Pick<RegistersPanel, 'refresh'>;
     traceListPanel: Pick<TraceListPanel, 'refresh'>;
     profilingPanel: Pick<ProfilingPanel, 'refresh'>;
     outputChannel: Pick<vscode.OutputChannel, 'appendLine'>;
@@ -89,6 +91,7 @@ export function handleLabwiredDebugEvent(e: DebugEventLike, deps: DebugEventDeps
         deps.peripheralProvider.refresh();
         deps.rtosProvider.refresh();
         deps.memoryInspectorPanel.refresh();
+        deps.registersPanel.refresh();
         deps.traceListPanel.refresh();
         deps.profilingPanel.refresh();
         return;
@@ -99,6 +102,7 @@ export function handleLabwiredDebugEvent(e: DebugEventLike, deps: DebugEventDeps
         deps.peripheralProvider.refresh();
         deps.rtosProvider.refresh();
         deps.memoryInspectorPanel.refresh();
+        deps.registersPanel.refresh();
         deps.traceListPanel.refresh();
         deps.profilingPanel.refresh();
     }
@@ -193,16 +197,24 @@ export class LabwiredConfigurationProvider implements vscode.DebugConfigurationP
 
         if (!config.program || !await this.checkFile(config.program)) {
             this.output.appendLine('LabWired: no firmware found to debug.');
-            const choice = await vscode.window.showErrorMessage(
-                'LabWired: no built firmware found. Build the project first, or set it up so LabWired knows which ELF to run.',
-                'Set up LabWired',
-                'Open Output'
-            );
-            if (choice === 'Set up LabWired') {
-                await vscode.commands.executeCommand('labwired.configureProject');
-            } else if (choice === 'Open Output') {
-                this.output.show();
-            }
+            // Deliberately NOT awaited. Awaiting would hold the launch open until
+            // the user clicks something — the session should abort now, and the
+            // offer to fix it is an aside, not a gate.
+            void vscode.window
+                .showErrorMessage(
+                    'LabWired: no built firmware found. Build the project first, or set it up so LabWired knows which ELF to run.',
+                    'Set up LabWired',
+                    'Open Output'
+                )
+                .then((choice) => {
+                    if (choice === 'Set up LabWired') {
+                        return vscode.commands.executeCommand('labwired.configureProject');
+                    }
+                    if (choice === 'Open Output') {
+                        this.output.show();
+                    }
+                    return undefined;
+                });
             return undefined; // abort launch
         }
 
@@ -479,6 +491,14 @@ export function activate(context: vscode.ExtensionContext) {
         })
     );
 
+    // Registers Panel — CPU core registers + decoded peripheral registers.
+    const registersPanel = new RegistersPanel(context);
+    context.subscriptions.push(
+        vscode.commands.registerCommand('labwired.showRegisters', () => {
+            void registersPanel.show();
+        })
+    );
+
     // Profiling Panel
     const profilingPanel = new ProfilingPanel(context);
     context.subscriptions.push(
@@ -501,6 +521,7 @@ export function activate(context: vscode.ExtensionContext) {
         peripheralProvider,
         rtosProvider,
         memoryInspectorPanel,
+        registersPanel,
         traceListPanel,
         profilingPanel,
         outputChannel,
