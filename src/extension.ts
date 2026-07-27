@@ -6,7 +6,6 @@
 
 import * as vscode from 'vscode';
 import * as path from 'path';
-import * as fs from 'fs';
 import { LabwiredCommandCenterProvider } from './commandCenter';
 import { TimelinePanel } from './timeline';
 import { PeripheralProvider } from './peripheralProvider';
@@ -20,8 +19,9 @@ import { SimulatorManager } from './simulatorManager';
 import { SystemTopologyPanel } from './topologyPanel';
 import { SimulatorViewProvider } from './simulatorView';
 import { showConfigWizard } from './configWizard';
-import { resolveCli, runTest } from './cli';
+import { resolveCli, resolveDap, runTest } from './cli';
 import { findLabConfig, readLabConfig, migrateLabConfig } from './labConfig';
+import { bestFirmware } from './firmware';
 import { LabwiredAuthProvider, AUTH_ID, AUTH_LABEL, SCOPES } from './auth';
 
 type DebugEventLike = {
@@ -112,6 +112,27 @@ export class LabwiredConfigurationProvider implements vscode.DebugConfigurationP
         private readonly checkFile: (p: string) => Promise<boolean> = fileExists
     ) { }
 
+    /**
+     * What F5 launches when the workspace has no `launch.json`.
+     *
+     * Without this, VS Code drops the user into the "select a debug
+     * configuration" picker and then writes a launch.json they have to fill in
+     * by hand. Everything here is resolved for real in
+     * `resolveDebugConfiguration`, so the config can stay empty of paths.
+     */
+    provideDebugConfigurations(_folder: vscode.WorkspaceFolder | undefined): vscode.DebugConfiguration[] {
+        return [
+            {
+                type: 'labwired',
+                request: 'launch',
+                name: 'LabWired: Debug firmware',
+                // No `program`: resolveDebugConfiguration fills it from
+                // .labwired/lab.yaml, or by finding the built ELF.
+                stopOnEntry: true,
+            },
+        ];
+    }
+
     async resolveDebugConfiguration(folder: vscode.WorkspaceFolder | undefined, config: vscode.DebugConfiguration, token?: vscode.CancellationToken): Promise<vscode.DebugConfiguration | undefined> {
         this.output.appendLine(`LabWired: Resolving debug configuration...`);
 
@@ -159,9 +180,29 @@ export class LabwiredConfigurationProvider implements vscode.DebugConfigurationP
             config.cwd = resolveDebugPath(config.cwd, rootPath);
         }
 
+        // Nothing named a firmware — find the built ELF rather than making the
+        // user write one out. This is what lets F5 work in a project that has
+        // been built but never configured for LabWired.
+        if (!config.program && rootPath) {
+            const found = bestFirmware(rootPath);
+            if (found) {
+                config.program = found.path;
+                this.output.appendLine(`LabWired: Using firmware from ${found.origin}: ${found.path}`);
+            }
+        }
+
         if (!config.program || !await this.checkFile(config.program)) {
-            this.output.appendLine("LabWired: ERROR - No program found to debug.");
-            vscode.window.showErrorMessage("Cannot find a program to debug. Please ensure you have a Cargo.toml or Makefile and have built the project.");
+            this.output.appendLine('LabWired: no firmware found to debug.');
+            const choice = await vscode.window.showErrorMessage(
+                'LabWired: no built firmware found. Build the project first, or set it up so LabWired knows which ELF to run.',
+                'Set up LabWired',
+                'Open Output'
+            );
+            if (choice === 'Set up LabWired') {
+                await vscode.commands.executeCommand('labwired.configureProject');
+            } else if (choice === 'Open Output') {
+                this.output.show();
+            }
             return undefined; // abort launch
         }
 
@@ -230,17 +271,19 @@ export class LabwiredDebugAdapterDescriptorFactory implements vscode.DebugAdapte
             return new vscode.DebugAdapterExecutable('docker', args);
         }
 
-        let dapPath = config.get<string>('dapPath');
-        if (!dapPath) {
-            dapPath = await findDapPath(this.context.extensionUri, this.output);
+        // Same cascade the CLI uses: setting → bundled → PATH → downloaded
+        // release. `labwired-dap` ships in the same tarball as `labwired`, so a
+        // user who has run anything already has it.
+        let dapPath: string;
+        try {
+            dapPath = await resolveDap(this.context, this.output);
+        } catch (e) {
+            const message = e instanceof Error ? e.message : String(e);
+            vscode.window.showErrorMessage(`LabWired: could not find the debug adapter. ${message}`);
+            throw e;
         }
 
         this.output.appendLine(`LabWired: Using DAP binary at ${dapPath}`);
-
-        if (!await fileExists(dapPath)) {
-            vscode.window.showErrorMessage(`LabWired: DAP binary not found at ${dapPath}. Please check your settings or reinstall the extension.`);
-            throw new Error(`DAP binary not found at ${dapPath}`);
-        }
 
         return new vscode.DebugAdapterExecutable(dapPath, []);
     }
@@ -670,76 +713,6 @@ function resolveDebugPath(template: string, workspaceRoot?: string): string {
         resolved = path.resolve(root, resolved);
     }
     return resolved;
-}
-
-async function findDapPath(extensionUri: vscode.Uri, output?: vscode.OutputChannel): Promise<string> {
-    const extPath = extensionUri.fsPath;
-    const isWin = process.platform === 'win32';
-    const binName = isWin ? 'labwired-dap.exe' : 'labwired-dap';
-
-    const log = (msg: string) => {
-        if (output) output.appendLine(`LabWired [PathDiscovery]: ${msg}`);
-        console.log(`LabWired [PathDiscovery]: ${msg}`);
-    };
-
-    log(`Searching for DAP binary (binName: ${binName})`);
-    log(`Extension path: ${extPath}`);
-
-    // 1. Check Bundled/Dev Path in extension
-    const extensionPossible = [
-        path.join(extPath, 'dist', 'bin', binName),
-        path.join(extPath, 'bin', binName)
-    ];
-
-    for (const p of extensionPossible) {
-        log(`Checking extension folder: ${p}`);
-        if (fs.existsSync(p)) {
-            log(`Found at: ${p}`);
-            return p;
-        }
-    }
-
-    // 2. Search in all workspace folders and their PARENTS
-    const workspaces = vscode.workspace.workspaceFolders || [];
-    log(`Checking ${workspaces.length} workspace folders and parents...`);
-
-    for (const folder of workspaces) {
-        let current = folder.uri.fsPath;
-        log(`Walking up from workspace folder: ${current}`);
-
-        // Search up to 5 levels up for the workspace/project root
-        for (let i = 0; i < 5; i++) {
-            const searchRoots = [
-                current,
-                path.join(current, 'core'),
-            ];
-
-            for (const searchRoot of searchRoots) {
-                const searchPaths = [
-                    path.join(searchRoot, 'target', 'release', binName),
-                    path.join(searchRoot, 'target', 'debug', binName),
-                ];
-
-                for (const p of searchPaths) {
-                    log(`[Level ${i}] Checking path: ${p}`);
-                    if (fs.existsSync(p)) {
-                        log(`Found at: ${p}`);
-                        return p;
-                    }
-                }
-            }
-
-            const parent = path.dirname(current);
-            if (parent === current) break; // root reached
-            current = parent;
-        }
-    }
-
-    // 3. Last ditch effort: Try hardcoded path based on common dev setup if workspace root is derived
-    const workspaceRoot = path.dirname(extPath);
-    const fallback = path.join(workspaceRoot, 'core', 'target', 'release', binName);
-    log(`Not found in any workspace or parent. Using fallback: ${fallback}`);
-    return fallback;
 }
 
 export function deactivate() {
