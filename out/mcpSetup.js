@@ -81,7 +81,7 @@ function configureAgentTools(output) {
                     description: 'No Bearer header — client may open browser auth',
                     id: 'anon',
                 },
-            ], { title: 'LabWired agent tools (shared MCP)' });
+            ], { title: 'Configure LabWired agent tools' });
             if (!pick) {
                 return;
             }
@@ -133,11 +133,11 @@ function configureAgentTools(output) {
         output.appendLine(`  Claude Code (same tools): ${claude}`);
         output.show(true);
         vscode.window
-            .showInformationMessage('LabWired agent tools configured (same labwired_* MCP as playground/CLI).', 'Copy Claude install line', 'Reload window')
+            .showInformationMessage('LabWired agent tools configured (same MCP tools as playground/CLI).', 'Copy Claude command', 'Reload window')
             .then((choice) => __awaiter(this, void 0, void 0, function* () {
-            if (choice === 'Copy Claude install line') {
+            if (choice === 'Copy Claude command') {
                 yield vscode.env.clipboard.writeText(claude);
-                vscode.window.showInformationMessage('Copied Claude MCP install line.');
+                vscode.window.showInformationMessage('Copied Claude MCP install command.');
             }
             else if (choice === 'Reload window') {
                 yield vscode.commands.executeCommand('workbench.action.reloadWindow');

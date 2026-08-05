@@ -324,12 +324,12 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(authStatusBar);
     const renderAuthStatus = (session: vscode.AuthenticationSession | undefined) => {
         if (session) {
-            authStatusBar.text = `$(account) LabWired: ${session.account.label}`;
-            authStatusBar.tooltip = 'Signed in to LabWired — click to sign out';
+            authStatusBar.text = `$(account) LabWired · ${session.account.label}`;
+            authStatusBar.tooltip = 'Signed in — click to sign out. Use “Configure Agent Tools” for MCP.';
             authStatusBar.command = 'labwired.signOut';
         } else {
-            authStatusBar.text = '$(account) LabWired: Sign in';
-            authStatusBar.tooltip = 'Sign in to LabWired for hosted features (optional)';
+            authStatusBar.text = '$(account) LabWired';
+            authStatusBar.tooltip = 'Sign in for hosted agent tools (optional — local debug stays free)';
             authStatusBar.command = 'labwired.signIn';
         }
         authStatusBar.show();
@@ -345,7 +345,13 @@ export function activate(context: vscode.ExtensionContext) {
         try {
             const session = await vscode.authentication.getSession(AUTH_ID, SCOPES, { createIfNone: true });
             if (session) {
-                vscode.window.showInformationMessage(`Signed in to LabWired as ${session.account.label}`);
+                const next = await vscode.window.showInformationMessage(
+                    `Signed in to LabWired as ${session.account.label}`,
+                    'Configure Agent Tools'
+                );
+                if (next === 'Configure Agent Tools') {
+                    await configureAgentTools(outputChannel);
+                }
             }
         } catch (e) {
             vscode.window.showErrorMessage(`LabWired: Sign-in failed: ${e instanceof Error ? e.message : e}`);
