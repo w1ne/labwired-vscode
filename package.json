@@ -1,10 +1,10 @@
 {
     "name": "labwired-vscode",
-    "displayName": "LabWired Debugger",
-    "version": "0.13.0",
+    "displayName": "LabWired",
+    "version": "0.14.0",
     "license": "MIT",
     "publisher": "w1ne",
-    "description": "Debug firmware on a simulated chip: breakpoints, stepping, and every register \u2014 no hardware required.",
+    "description": "Debug firmware on a virtual chip (breakpoints, registers, reverse step) and connect shared LabWired agent tools (MCP) for compile / run / verify.",
     "engines": {
         "vscode": "^1.75.0"
     },
@@ -14,10 +14,18 @@
         "Testing"
     ],
     "activationEvents": [
+        "onCommand:labwired.compileAndRun",
+        "onCommand:labwired.configureAgentTools",
+        "onCommand:labwired.copyAgentInstall",
+        "onCommand:labwired.copyClaudeMcpInstall",
+        "onCommand:labwired.signIn",
+        "onCommand:labwired.signOut",
+        "onCommand:labwired.startOpenCodeAgent",
         "onDebugResolve:labwired",
-        "workspaceContains:.labwired/lab.yaml",
+        "onView:labwired.simulator",
         "workspaceContains:**/Cargo.toml",
-        "workspaceContains:**/Makefile"
+        "workspaceContains:**/Makefile",
+        "workspaceContains:.labwired/lab.yaml"
     ],
     "contributes": {
         "authentication": [
@@ -32,7 +40,7 @@
                 "labwired.apiUrl": {
                     "type": "string",
                     "default": "https://api.labwired.com",
-                    "description": "LabWired hosted API base URL for sign-in and hosted features."
+                    "description": "LabWired API base URL (sign-in and hosted MCP at <apiUrl>/mcp). Default: https://api.labwired.com"
                 },
                 "labwired.demoUi.mode": {
                     "type": "string",
@@ -58,6 +66,11 @@
                     "type": "string",
                     "default": "v0.19.3",
                     "description": "LabWired release tag the extension downloads. The tarball carries both the labwired CLI and the labwired-dap debug adapter (from v0.19.3 onward)."
+                },
+                "labwired.agentPath": {
+                    "type": "string",
+                    "default": "",
+                    "description": "Path to the labwired agent launcher (OpenCode entry). Empty = auto-detect ~/.labwired/bin/labwired or PATH."
                 }
             }
         },
@@ -156,75 +169,104 @@
         "commands": [
             {
                 "command": "labwired.compileAndRun",
-                "title": "Run in LabWired",
-                "icon": "$(play)"
+                "title": "Run Test (lab.yaml)",
+                "icon": "$(play)",
+                "category": "LabWired"
             },
             {
                 "command": "labwired.showRegisters",
-                "title": "LabWired: Show Registers",
+                "title": "Show Registers",
                 "category": "LabWired"
             },
             {
                 "command": "labwired.showDashboard",
-                "title": "Show Command Center"
+                "title": "Show Command Center",
+                "category": "LabWired"
             },
             {
                 "command": "labwired.showTopology",
-                "title": "LabWired: Show System Topology",
+                "title": "Show System Topology",
                 "category": "LabWired"
             },
             {
                 "command": "labwired.showTimeline",
-                "title": "LabWired: Show Timeline",
+                "title": "Show Timeline",
                 "category": "LabWired"
             },
             {
                 "command": "labwired.showGraphing",
-                "title": "LabWired: Show Logic Analyzer",
+                "title": "Show Logic Analyzer",
                 "category": "LabWired"
             },
             {
                 "command": "labwired.showMemoryInspector",
-                "title": "LabWired: Show Memory Inspector",
+                "title": "Show Memory Inspector",
                 "category": "LabWired"
             },
             {
                 "command": "labwired.showTraceList",
-                "title": "LabWired: Show Instruction Trace",
+                "title": "Show Instruction Trace",
                 "category": "LabWired"
             },
             {
                 "command": "labwired.showProfiling",
-                "title": "LabWired: Show Performance Profiler",
+                "title": "Show Performance Profiler",
                 "category": "LabWired"
             },
             {
                 "command": "labwired.startSimulator",
                 "title": "Start Simulator",
-                "icon": "$(play)"
+                "icon": "$(play)",
+                "category": "LabWired"
             },
             {
                 "command": "labwired.stopSimulator",
                 "title": "Stop Simulator",
-                "icon": "$(stop)"
+                "icon": "$(stop)",
+                "category": "LabWired"
             },
             {
                 "command": "labwired.restartSimulator",
                 "title": "Restart Simulator",
-                "icon": "$(refresh)"
+                "icon": "$(refresh)",
+                "category": "LabWired"
             },
             {
                 "command": "labwired.configureProject",
-                "title": "Configure Project...",
-                "icon": "$(gear)"
+                "title": "Configure Project\u2026",
+                "icon": "$(gear)",
+                "category": "LabWired"
             },
             {
                 "command": "labwired.signIn",
-                "title": "LabWired: Sign in"
+                "title": "Sign In",
+                "category": "LabWired"
             },
             {
                 "command": "labwired.signOut",
-                "title": "LabWired: Sign out"
+                "title": "Sign Out",
+                "category": "LabWired"
+            },
+            {
+                "command": "labwired.configureAgentTools",
+                "title": "Configure Agent Tools",
+                "category": "LabWired"
+            },
+            {
+                "command": "labwired.copyClaudeMcpInstall",
+                "title": "Copy Claude MCP Install Command",
+                "category": "LabWired"
+            },
+            {
+                "command": "labwired.startOpenCodeAgent",
+                "title": "Start OpenCode Agent",
+                "category": "LabWired",
+                "icon": "$(terminal)"
+            },
+            {
+                "command": "labwired.copyAgentInstall",
+                "title": "Copy Agent Install Command",
+                "category": "LabWired"
             }
         ],
         "viewsContainers": {
@@ -312,7 +354,10 @@
         "esp32",
         "stm32",
         "nrf52",
-        "arm"
+        "arm",
+        "mcp",
+        "agent",
+        "labwired"
     ],
     "repository": {
         "type": "git",

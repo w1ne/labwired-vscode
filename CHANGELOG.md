@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.14.0
+
+### Polish + agent tools on the existing extension
+
+- **Configure Agent Tools** writes `.vscode/mcp.json` for the shared hosted MCP
+  (`api.labwired.com/mcp`) — same `labwired_*` tools as playground, CLI, and OpenCode.
+- **Start OpenCode Agent** — same pattern as Embedder: extension launches the
+  `labwired` OpenCode runtime in a terminal (install prompt if missing).
+- **Copy Claude MCP Install** / **Copy Agent Install** one-liners.
+- Sign-in offers Configure Agent Tools; configure offers Start OpenCode Agent.
+- Command palette titles normalized under the **LabWired** category.
+- README: debug first; agent tools + OpenCode as shared-tool paths.
+
 ## 0.13.0
 
 The first release where debugging works on a machine that has not built

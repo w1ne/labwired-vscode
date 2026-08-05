@@ -24,6 +24,8 @@ import { findLabConfig, readLabConfig, migrateLabConfig } from './labConfig';
 import { bestFirmware } from './firmware';
 import { RegistersPanel } from './registersPanel';
 import { LabwiredAuthProvider, AUTH_ID, AUTH_LABEL, SCOPES } from './auth';
+import { configureAgentTools, copyClaudeMcpLine } from './mcpSetup';
+import { startOpenCodeAgent, copyAgentInstallCommand } from './openCodeAgent';
 
 type DebugEventLike = {
     session: { type: string };
@@ -323,12 +325,12 @@ export function activate(context: vscode.ExtensionContext) {
     context.subscriptions.push(authStatusBar);
     const renderAuthStatus = (session: vscode.AuthenticationSession | undefined) => {
         if (session) {
-            authStatusBar.text = `$(account) LabWired: ${session.account.label}`;
-            authStatusBar.tooltip = 'Signed in to LabWired — click to sign out';
+            authStatusBar.text = `$(account) LabWired · ${session.account.label}`;
+            authStatusBar.tooltip = 'Signed in — click to sign out. Use “Configure Agent Tools” for MCP.';
             authStatusBar.command = 'labwired.signOut';
         } else {
-            authStatusBar.text = '$(account) LabWired: Sign in';
-            authStatusBar.tooltip = 'Sign in to LabWired for hosted features (optional)';
+            authStatusBar.text = '$(account) LabWired';
+            authStatusBar.tooltip = 'Sign in for hosted agent tools (optional — local debug stays free)';
             authStatusBar.command = 'labwired.signIn';
         }
         authStatusBar.show();
@@ -344,7 +346,13 @@ export function activate(context: vscode.ExtensionContext) {
         try {
             const session = await vscode.authentication.getSession(AUTH_ID, SCOPES, { createIfNone: true });
             if (session) {
-                vscode.window.showInformationMessage(`Signed in to LabWired as ${session.account.label}`);
+                const next = await vscode.window.showInformationMessage(
+                    `Signed in to LabWired as ${session.account.label}`,
+                    'Configure Agent Tools'
+                );
+                if (next === 'Configure Agent Tools') {
+                    await configureAgentTools(outputChannel);
+                }
             }
         } catch (e) {
             vscode.window.showErrorMessage(`LabWired: Sign-in failed: ${e instanceof Error ? e.message : e}`);
@@ -359,6 +367,28 @@ export function activate(context: vscode.ExtensionContext) {
         }
         await authProvider.removeSession(session.id);
         vscode.window.showInformationMessage('Signed out of LabWired');
+    }));
+
+    context.subscriptions.push(vscode.commands.registerCommand('labwired.configureAgentTools', async () => {
+        try {
+            await configureAgentTools(outputChannel);
+        } catch (e) {
+            vscode.window.showErrorMessage(`LabWired: Configure agent tools failed: ${e instanceof Error ? e.message : e}`);
+        }
+    }));
+    context.subscriptions.push(vscode.commands.registerCommand('labwired.copyClaudeMcpInstall', async () => {
+        await copyClaudeMcpLine();
+    }));
+
+    context.subscriptions.push(vscode.commands.registerCommand('labwired.startOpenCodeAgent', async () => {
+        try {
+            await startOpenCodeAgent(outputChannel);
+        } catch (e) {
+            vscode.window.showErrorMessage(`LabWired: Start OpenCode Agent failed: ${e instanceof Error ? e.message : e}`);
+        }
+    }));
+    context.subscriptions.push(vscode.commands.registerCommand('labwired.copyAgentInstall', async () => {
+        await copyAgentInstallCommand();
     }));
 
     // Simulator Management

@@ -35,6 +35,8 @@ const labConfig_1 = require("./labConfig");
 const firmware_1 = require("./firmware");
 const registersPanel_1 = require("./registersPanel");
 const auth_1 = require("./auth");
+const mcpSetup_1 = require("./mcpSetup");
+const openCodeAgent_1 = require("./openCodeAgent");
 function handleLabwiredDebugEvent(e, deps) {
     var _a, _b, _c;
     if (e.session.type !== 'labwired') {
@@ -289,13 +291,13 @@ function activate(context) {
     context.subscriptions.push(authStatusBar);
     const renderAuthStatus = (session) => {
         if (session) {
-            authStatusBar.text = `$(account) LabWired: ${session.account.label}`;
-            authStatusBar.tooltip = 'Signed in to LabWired — click to sign out';
+            authStatusBar.text = `$(account) LabWired · ${session.account.label}`;
+            authStatusBar.tooltip = 'Signed in — click to sign out. Use “Configure Agent Tools” for MCP.';
             authStatusBar.command = 'labwired.signOut';
         }
         else {
-            authStatusBar.text = '$(account) LabWired: Sign in';
-            authStatusBar.tooltip = 'Sign in to LabWired for hosted features (optional)';
+            authStatusBar.text = '$(account) LabWired';
+            authStatusBar.tooltip = 'Sign in for hosted agent tools (optional — local debug stays free)';
             authStatusBar.command = 'labwired.signIn';
         }
         authStatusBar.show();
@@ -310,7 +312,10 @@ function activate(context) {
         try {
             const session = yield vscode.authentication.getSession(auth_1.AUTH_ID, auth_1.SCOPES, { createIfNone: true });
             if (session) {
-                vscode.window.showInformationMessage(`Signed in to LabWired as ${session.account.label}`);
+                const next = yield vscode.window.showInformationMessage(`Signed in to LabWired as ${session.account.label}`, 'Configure Agent Tools');
+                if (next === 'Configure Agent Tools') {
+                    yield (0, mcpSetup_1.configureAgentTools)(outputChannel);
+                }
             }
         }
         catch (e) {
@@ -325,6 +330,28 @@ function activate(context) {
         }
         yield authProvider.removeSession(session.id);
         vscode.window.showInformationMessage('Signed out of LabWired');
+    })));
+    context.subscriptions.push(vscode.commands.registerCommand('labwired.configureAgentTools', () => __awaiter(this, void 0, void 0, function* () {
+        try {
+            yield (0, mcpSetup_1.configureAgentTools)(outputChannel);
+        }
+        catch (e) {
+            vscode.window.showErrorMessage(`LabWired: Configure agent tools failed: ${e instanceof Error ? e.message : e}`);
+        }
+    })));
+    context.subscriptions.push(vscode.commands.registerCommand('labwired.copyClaudeMcpInstall', () => __awaiter(this, void 0, void 0, function* () {
+        yield (0, mcpSetup_1.copyClaudeMcpLine)();
+    })));
+    context.subscriptions.push(vscode.commands.registerCommand('labwired.startOpenCodeAgent', () => __awaiter(this, void 0, void 0, function* () {
+        try {
+            yield (0, openCodeAgent_1.startOpenCodeAgent)(outputChannel);
+        }
+        catch (e) {
+            vscode.window.showErrorMessage(`LabWired: Start OpenCode Agent failed: ${e instanceof Error ? e.message : e}`);
+        }
+    })));
+    context.subscriptions.push(vscode.commands.registerCommand('labwired.copyAgentInstall', () => __awaiter(this, void 0, void 0, function* () {
+        yield (0, openCodeAgent_1.copyAgentInstallCommand)();
     })));
     // Simulator Management
     const simulatorManager = new simulatorManager_1.SimulatorManager(outputChannel);
