@@ -35,6 +35,7 @@ const labConfig_1 = require("./labConfig");
 const firmware_1 = require("./firmware");
 const registersPanel_1 = require("./registersPanel");
 const auth_1 = require("./auth");
+const mcpSetup_1 = require("./mcpSetup");
 function handleLabwiredDebugEvent(e, deps) {
     var _a, _b, _c;
     if (e.session.type !== 'labwired') {
@@ -325,6 +326,17 @@ function activate(context) {
         }
         yield authProvider.removeSession(session.id);
         vscode.window.showInformationMessage('Signed out of LabWired');
+    })));
+    context.subscriptions.push(vscode.commands.registerCommand('labwired.configureAgentTools', () => __awaiter(this, void 0, void 0, function* () {
+        try {
+            yield (0, mcpSetup_1.configureAgentTools)(outputChannel);
+        }
+        catch (e) {
+            vscode.window.showErrorMessage(`LabWired: Configure agent tools failed: ${e instanceof Error ? e.message : e}`);
+        }
+    })));
+    context.subscriptions.push(vscode.commands.registerCommand('labwired.copyClaudeMcpInstall', () => __awaiter(this, void 0, void 0, function* () {
+        yield (0, mcpSetup_1.copyClaudeMcpLine)();
     })));
     // Simulator Management
     const simulatorManager = new simulatorManager_1.SimulatorManager(outputChannel);

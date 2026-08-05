@@ -1,17 +1,32 @@
 # LabWired for VS Code
 
 Debug firmware on a **simulated chip** — breakpoints, stepping, and every register — with no
-hardware attached.
+hardware attached. Wire the **same agent tools** every LabWired surface uses (`labwired_*` MCP
+at `api.labwired.com`) into VS Code / Copilot / Claude Code.
+
+> **Ship this first.** This extension is MIT and installs into stock VS Code. The full LabWired
+> Editor (forked workbench) is a separate product with its own licensing — not required for
+> agent tools, twin debug, or hosted MCP.
 
 ## Get started
 
-1. Install the extension.
+1. Install the extension (Marketplace or `.vsix`).
 2. Open a firmware project and build it.
-3. Press **F5**.
+3. Press **F5** to debug on the twin.
 
-That is the whole setup. No `launch.json` to write: the extension resolves the ELF from
-`.labwired/lab.yaml` if the project has one, and otherwise finds your build. The simulator
-and debug adapter download themselves on first use.
+Optional — agent tools (shared with playground & CLI):
+
+1. **LabWired: Sign in** (hosted features).
+2. **LabWired: Configure Agent Tools (MCP)** → writes `.vscode/mcp.json`.
+3. Chat with Copilot / your agent; it gets `labwired_list` / `compile` / `run` / `verify` / part knowledge.
+
+Or install the same tools in Claude Code (no VS Code):
+
+```bash
+claude mcp add labwired --transport http https://api.labwired.com/mcp
+```
+
+(Command palette: **LabWired: Copy Claude MCP Install Line**.)
 
 ## What you get
 

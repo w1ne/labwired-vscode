@@ -24,6 +24,7 @@ import { findLabConfig, readLabConfig, migrateLabConfig } from './labConfig';
 import { bestFirmware } from './firmware';
 import { RegistersPanel } from './registersPanel';
 import { LabwiredAuthProvider, AUTH_ID, AUTH_LABEL, SCOPES } from './auth';
+import { configureAgentTools, copyClaudeMcpLine } from './mcpSetup';
 
 type DebugEventLike = {
     session: { type: string };
@@ -359,6 +360,17 @@ export function activate(context: vscode.ExtensionContext) {
         }
         await authProvider.removeSession(session.id);
         vscode.window.showInformationMessage('Signed out of LabWired');
+    }));
+
+    context.subscriptions.push(vscode.commands.registerCommand('labwired.configureAgentTools', async () => {
+        try {
+            await configureAgentTools(outputChannel);
+        } catch (e) {
+            vscode.window.showErrorMessage(`LabWired: Configure agent tools failed: ${e instanceof Error ? e.message : e}`);
+        }
+    }));
+    context.subscriptions.push(vscode.commands.registerCommand('labwired.copyClaudeMcpInstall', async () => {
+        await copyClaudeMcpLine();
     }));
 
     // Simulator Management
