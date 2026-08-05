@@ -1,10 +1,10 @@
 {
     "name": "labwired-vscode",
     "displayName": "LabWired Debugger",
-    "version": "0.13.0",
+    "version": "0.14.0",
     "license": "MIT",
     "publisher": "w1ne",
-    "description": "Debug firmware on a simulated chip: breakpoints, stepping, and every register \u2014 no hardware required.",
+    "description": "Debug firmware on a simulated chip and wire shared LabWired agent tools (labwired_* MCP) into VS Code \u2014 no forked editor license required.",
     "engines": {
         "vscode": "^1.75.0"
     },
@@ -17,7 +17,10 @@
         "onDebugResolve:labwired",
         "workspaceContains:.labwired/lab.yaml",
         "workspaceContains:**/Cargo.toml",
-        "workspaceContains:**/Makefile"
+        "workspaceContains:**/Makefile",
+        "onCommand:labwired.configureAgentTools",
+        "onCommand:labwired.copyClaudeMcpInstall",
+        "onCommand:labwired.signIn"
     ],
     "contributes": {
         "authentication": [
@@ -32,7 +35,7 @@
                 "labwired.apiUrl": {
                     "type": "string",
                     "default": "https://api.labwired.com",
-                    "description": "LabWired hosted API base URL for sign-in and hosted features."
+                    "description": "LabWired API base URL for sign-in and hosted agent tools (MCP at {apiUrl}/mcp)."
                 },
                 "labwired.demoUi.mode": {
                     "type": "string",
@@ -225,6 +228,16 @@
             {
                 "command": "labwired.signOut",
                 "title": "LabWired: Sign out"
+            },
+            {
+                "command": "labwired.configureAgentTools",
+                "title": "Configure Agent Tools (MCP)",
+                "category": "LabWired"
+            },
+            {
+                "command": "labwired.copyClaudeMcpInstall",
+                "title": "Copy Claude MCP Install Line",
+                "category": "LabWired"
             }
         ],
         "viewsContainers": {
@@ -312,7 +325,10 @@
         "esp32",
         "stm32",
         "nrf52",
-        "arm"
+        "arm",
+        "mcp",
+        "agent",
+        "labwired"
     ],
     "repository": {
         "type": "git",
