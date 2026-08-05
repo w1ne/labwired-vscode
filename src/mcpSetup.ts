@@ -146,6 +146,7 @@ export async function configureAgentTools(output: vscode.OutputChannel): Promise
     output.appendLine(`  url      → ${mcpUrl}`);
     output.appendLine(`  mode     → ${mode}`);
     output.appendLine(`  Claude Code (same tools): ${claude}`);
+    output.appendLine('  OpenCode agent (same tools): labwired login && labwired');
     output.show(true);
 
     vscode.window
