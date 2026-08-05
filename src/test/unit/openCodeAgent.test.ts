@@ -6,7 +6,7 @@ import {
     resolveLabwiredAgentLauncher,
     agentInstallCommand,
     DEFAULT_AGENT_INSTALL,
-} from '../../openCodeAgent';
+} from '../../openCodeAgentResolve';
 
 describe('openCodeAgent — same tools runtime', () => {
     it('install command is platform-appropriate', () => {
