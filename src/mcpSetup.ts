@@ -84,7 +84,7 @@ export async function configureAgentTools(output: vscode.OutputChannel): Promise
                     id: 'anon',
                 },
             ],
-            { title: 'LabWired agent tools (shared MCP)' }
+            { title: 'Configure LabWired agent tools' }
         );
         if (!pick) {
             return;
@@ -150,14 +150,14 @@ export async function configureAgentTools(output: vscode.OutputChannel): Promise
 
     vscode.window
         .showInformationMessage(
-            'LabWired agent tools configured (same labwired_* MCP as playground/CLI).',
-            'Copy Claude install line',
+            'LabWired agent tools configured (same MCP tools as playground/CLI).',
+            'Copy Claude command',
             'Reload window'
         )
         .then(async (choice) => {
-            if (choice === 'Copy Claude install line') {
+            if (choice === 'Copy Claude command') {
                 await vscode.env.clipboard.writeText(claude);
-                vscode.window.showInformationMessage('Copied Claude MCP install line.');
+                vscode.window.showInformationMessage('Copied Claude MCP install command.');
             } else if (choice === 'Reload window') {
                 await vscode.commands.executeCommand('workbench.action.reloadWindow');
             }

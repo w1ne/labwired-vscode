@@ -1,48 +1,49 @@
 # LabWired for VS Code
 
-Debug firmware on a **simulated chip** — breakpoints, stepping, and every register — with no
-hardware attached. Wire the **same agent tools** every LabWired surface uses (`labwired_*` MCP
-at `api.labwired.com`) into VS Code / Copilot / Claude Code.
+Debug firmware on a **virtual chip** — breakpoints, stepping (including reverse), registers, memory — with no hardware attached.
 
-> **Ship this first.** This extension is MIT and installs into stock VS Code. The full LabWired
-> Editor (forked workbench) is a separate product with its own licensing — not required for
-> agent tools, twin debug, or hosted MCP.
+Optionally connect **agent tools** (the same `labwired_*` MCP surface as the Playground and CLI) so Copilot, Claude Code, or Cursor can compile, run, and verify firmware on the twin.
 
 ## Get started
 
-1. Install the extension (Marketplace or `.vsix`).
+1. Install the extension.
 2. Open a firmware project and build it.
-3. Press **F5** to debug on the twin.
+3. Press **F5**.
 
-Optional — agent tools (shared with playground & CLI):
+No `launch.json` required: the extension resolves the ELF from `.labwired/lab.yaml` or discovers your build. The simulator and debug adapter download themselves on first use.
 
-1. **LabWired: Sign in** (hosted features).
-2. **LabWired: Configure Agent Tools (MCP)** → writes `.vscode/mcp.json`.
-3. Chat with Copilot / your agent; it gets `labwired_list` / `compile` / `run` / `verify` / part knowledge.
+## Agent tools (optional)
 
-Or install the same tools in Claude Code (no VS Code):
+Same tools everywhere: `labwired_list`, `labwired_describe`, `labwired_compile`, `labwired_run`, `labwired_verify`, part knowledge, …
+
+1. **LabWired: Sign In** (optional; unlocks authenticated hosted tools).
+2. **LabWired: Configure Agent Tools** → writes `.vscode/mcp.json` pointing at `https://api.labwired.com/mcp`.
+3. Use your editor’s agent chat; it can call those tools.
+
+Claude Code (outside VS Code):
 
 ```bash
 claude mcp add labwired --transport http https://api.labwired.com/mcp
 ```
 
-(Command palette: **LabWired: Copy Claude MCP Install Line**.)
+**LabWired: Copy Claude MCP Install Command** copies that line.
+
+Local debug and **Run Test (lab.yaml)** stay free and do not require sign-in.
 
 ## What you get
 
 | | |
 |---|---|
 | **Breakpoints and stepping** | Including *step back* — the simulator can run in reverse. |
-| **Every register** | CPU core registers and decoded peripheral registers, searchable, with **changes since the last stop highlighted**. `LabWired: Show Registers`. |
-| **Memory** | Hex/ASCII inspect and edit. Unmapped address space is reported as unreadable rather than shown as zeros. |
-| **Peripherals** | Register names and bit-fields for the chips that can decode them; peripherals with no schema say so rather than appearing empty. |
-| **Timeline, trace, profiler** | Execution history, instruction trace, and where the cycles went. |
+| **Registers** | CPU and decoded peripherals, searchable, changes since last stop highlighted. |
+| **Memory** | Hex/ASCII inspect and edit. Unmapped space is unreadable, not zeros. |
+| **Peripherals** | Names and bit-fields where modeled; honest empty state when not. |
+| **Timeline, trace, profiler** | Execution history and where cycles went. |
+| **Agent MCP** | Shared hosted tools for AI agents (configure once). |
 
-Inspecting is passive: reading a peripheral cannot perturb the firmware you are debugging.
+Inspecting is passive: reading a peripheral does not perturb the firmware under debug.
 
-## Run in LabWired — the one-file contract
-
-Each project describes its simulation in a single file, `.labwired/lab.yaml`:
+## Run contract (`.labwired/lab.yaml`)
 
 ```yaml
 schema_version: "1.0"
@@ -56,75 +57,41 @@ assertions:
   - expected_stop_reason: max_steps
 ```
 
-Paths inside `inputs.*` resolve relative to the `.labwired/` directory. When you click
-**Run in LabWired**, the extension builds your firmware and then executes the exact same
-command CI runs over that exact same file:
+**LabWired: Run Test (lab.yaml)** runs the same `labwired test …` path CI uses, so the editor and CI cannot disagree.
 
-```
-labwired test --script .labwired/lab.yaml --output-dir .labwired/out --firmware <built elf>
-```
-
-so the editor can never disagree with CI. It emits `result.json` / `uart.log` / `junit.xml`
-and an exit code. Running is free — no login required. The `labwired` CLI is auto-downloaded
-on first use (set `labwired.cliPath` to use your own build; on Windows set it explicitly —
-auto-download is not yet available there).
-
-Use **LabWired: Configure Project...** to generate `.labwired/lab.yaml`.
+**LabWired: Configure Project…** generates `.labwired/lab.yaml`.
 
 ## Sign in (optional)
 
-Running the simulator is **free and needs no login** — everything above works signed out.
+Local simulation needs no account. Sign-in uses LabWired’s OAuth (Clerk-backed) at `api.labwired.com` for hosted features only.
 
-Signing in is entirely optional and only unlocks **hosted** features. It uses **LabWired's
-own account** (Clerk-backed OAuth 2.1, `api.labwired.com`), not a third party. The flow is
-standard OAuth with PKCE: your browser opens, you approve, and VS Code receives the callback.
+- Tokens live in VS Code **SecretStorage**.
+- Override the API with `labwired.apiUrl`.
 
-- **LabWired: Sign in** / **LabWired: Sign out** (also available from the status bar item).
-- Your access/refresh tokens are stored in VS Code **SecretStorage** — never in plain settings
-  or logs.
-- Point at a different backend with the `labwired.apiUrl` setting (default
-  `https://api.labwired.com`).
+## Settings
 
-Sign-in tokens are LabWired account tokens and are **not** used for local runs, which stay free.
+| Setting | Purpose |
+|---------|---------|
+| `labwired.apiUrl` | API base (default `https://api.labwired.com`) |
+| `labwired.cliPath` | Use your own `labwired` binary |
+| `labwired.dapPath` | Use your own `labwired-dap` |
+| `labwired.cliVersion` | Release tag for auto-download |
+| `labwired.executionMode` | `local` or `docker` |
 
 ## Development
 
-1.  **Install Dependencies**:
-    ```bash
-    npm install
-    ```
-
-2.  **Compile**:
-    ```bash
-    npm run compile
-    ```
-
-3.  **Run**:
-    Open this folder in VS Code and press `F5`.
-
-## Requirements
-*   **Local Mode**: The `labwired` CLI/DAP must be installed (included in the extension or available in PATH).
-*   **Docker Mode**: Docker must be installed and running.
-
-## Docker Support
-
-LabWired supports running simulations, builds, and tests inside a Docker container. This ensures a consistent development environment and eliminates the need for manual toolchain setup.
-
-### Configuration
-
-To enable Docker mode, add the following to your VS Code settings:
-
-```json
-{
-    "labwired.executionMode": "docker",
-    "labwired.docker.image": "w1ne/labwired-dev:latest",
-    "labwired.docker.autoPull": true
-}
+```bash
+npm install
+npm run compile
+npm run test:unit
 ```
 
-### Features
+Press **F5** in this folder to launch an Extension Development Host.
 
--   **Simulation in Docker**: The extensions runs the `labwired-dap` inside a container.
--   **Local Builds**: The extension uses your *local* toolchain (`cargo`, `make`) to build the firmware.
--   **Mirror Mounts**: The workspace is mounted to the exact same path inside the container, ensuring debug symbols match.
--   **Dashboard Access**: Port 9999 is automatically forwarded for the Live Dashboard.
+```bash
+npm run package   # → labwired-vscode-*.vsix
+```
+
+## License
+
+MIT.

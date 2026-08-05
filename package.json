@@ -1,10 +1,10 @@
 {
     "name": "labwired-vscode",
-    "displayName": "LabWired Debugger",
+    "displayName": "LabWired",
     "version": "0.14.0",
     "license": "MIT",
     "publisher": "w1ne",
-    "description": "Debug firmware on a simulated chip and wire shared LabWired agent tools (labwired_* MCP) into VS Code \u2014 no forked editor license required.",
+    "description": "Debug firmware on a virtual chip (breakpoints, registers, reverse step) and connect shared LabWired agent tools (MCP) for compile / run / verify.",
     "engines": {
         "vscode": "^1.75.0"
     },
@@ -14,13 +14,16 @@
         "Testing"
     ],
     "activationEvents": [
-        "onDebugResolve:labwired",
-        "workspaceContains:.labwired/lab.yaml",
-        "workspaceContains:**/Cargo.toml",
-        "workspaceContains:**/Makefile",
+        "onCommand:labwired.compileAndRun",
         "onCommand:labwired.configureAgentTools",
         "onCommand:labwired.copyClaudeMcpInstall",
-        "onCommand:labwired.signIn"
+        "onCommand:labwired.signIn",
+        "onCommand:labwired.signOut",
+        "onDebugResolve:labwired",
+        "onView:labwired.simulator",
+        "workspaceContains:**/Cargo.toml",
+        "workspaceContains:**/Makefile",
+        "workspaceContains:.labwired/lab.yaml"
     ],
     "contributes": {
         "authentication": [
@@ -35,7 +38,7 @@
                 "labwired.apiUrl": {
                     "type": "string",
                     "default": "https://api.labwired.com",
-                    "description": "LabWired API base URL for sign-in and hosted agent tools (MCP at {apiUrl}/mcp)."
+                    "description": "LabWired API base URL (sign-in and hosted MCP at <apiUrl>/mcp). Default: https://api.labwired.com"
                 },
                 "labwired.demoUi.mode": {
                     "type": "string",
@@ -159,84 +162,92 @@
         "commands": [
             {
                 "command": "labwired.compileAndRun",
-                "title": "Run in LabWired",
-                "icon": "$(play)"
+                "title": "Run Test (lab.yaml)",
+                "icon": "$(play)",
+                "category": "LabWired"
             },
             {
                 "command": "labwired.showRegisters",
-                "title": "LabWired: Show Registers",
+                "title": "Show Registers",
                 "category": "LabWired"
             },
             {
                 "command": "labwired.showDashboard",
-                "title": "Show Command Center"
+                "title": "Show Command Center",
+                "category": "LabWired"
             },
             {
                 "command": "labwired.showTopology",
-                "title": "LabWired: Show System Topology",
+                "title": "Show System Topology",
                 "category": "LabWired"
             },
             {
                 "command": "labwired.showTimeline",
-                "title": "LabWired: Show Timeline",
+                "title": "Show Timeline",
                 "category": "LabWired"
             },
             {
                 "command": "labwired.showGraphing",
-                "title": "LabWired: Show Logic Analyzer",
+                "title": "Show Logic Analyzer",
                 "category": "LabWired"
             },
             {
                 "command": "labwired.showMemoryInspector",
-                "title": "LabWired: Show Memory Inspector",
+                "title": "Show Memory Inspector",
                 "category": "LabWired"
             },
             {
                 "command": "labwired.showTraceList",
-                "title": "LabWired: Show Instruction Trace",
+                "title": "Show Instruction Trace",
                 "category": "LabWired"
             },
             {
                 "command": "labwired.showProfiling",
-                "title": "LabWired: Show Performance Profiler",
+                "title": "Show Performance Profiler",
                 "category": "LabWired"
             },
             {
                 "command": "labwired.startSimulator",
                 "title": "Start Simulator",
-                "icon": "$(play)"
+                "icon": "$(play)",
+                "category": "LabWired"
             },
             {
                 "command": "labwired.stopSimulator",
                 "title": "Stop Simulator",
-                "icon": "$(stop)"
+                "icon": "$(stop)",
+                "category": "LabWired"
             },
             {
                 "command": "labwired.restartSimulator",
                 "title": "Restart Simulator",
-                "icon": "$(refresh)"
+                "icon": "$(refresh)",
+                "category": "LabWired"
             },
             {
                 "command": "labwired.configureProject",
-                "title": "Configure Project...",
-                "icon": "$(gear)"
+                "title": "Configure Project\u2026",
+                "icon": "$(gear)",
+                "category": "LabWired"
             },
             {
                 "command": "labwired.signIn",
-                "title": "LabWired: Sign in"
+                "title": "Sign In",
+                "category": "LabWired"
             },
             {
                 "command": "labwired.signOut",
-                "title": "LabWired: Sign out"
+                "title": "Sign Out",
+                "category": "LabWired"
             },
             {
                 "command": "labwired.configureAgentTools",
-                "title": "Configure Agent Tools (MCP)",
+                "title": "Configure Agent Tools",
                 "category": "LabWired"
             },
             {
                 "command": "labwired.copyClaudeMcpInstall",
-                "title": "Copy Claude MCP Install Line",
+                "title": "Copy Claude MCP Install Command",
                 "category": "LabWired"
             }
         ],

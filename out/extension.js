@@ -290,13 +290,13 @@ function activate(context) {
     context.subscriptions.push(authStatusBar);
     const renderAuthStatus = (session) => {
         if (session) {
-            authStatusBar.text = `$(account) LabWired: ${session.account.label}`;
-            authStatusBar.tooltip = 'Signed in to LabWired — click to sign out';
+            authStatusBar.text = `$(account) LabWired · ${session.account.label}`;
+            authStatusBar.tooltip = 'Signed in — click to sign out. Use “Configure Agent Tools” for MCP.';
             authStatusBar.command = 'labwired.signOut';
         }
         else {
-            authStatusBar.text = '$(account) LabWired: Sign in';
-            authStatusBar.tooltip = 'Sign in to LabWired for hosted features (optional)';
+            authStatusBar.text = '$(account) LabWired';
+            authStatusBar.tooltip = 'Sign in for hosted agent tools (optional — local debug stays free)';
             authStatusBar.command = 'labwired.signIn';
         }
         authStatusBar.show();
@@ -311,7 +311,10 @@ function activate(context) {
         try {
             const session = yield vscode.authentication.getSession(auth_1.AUTH_ID, auth_1.SCOPES, { createIfNone: true });
             if (session) {
-                vscode.window.showInformationMessage(`Signed in to LabWired as ${session.account.label}`);
+                const next = yield vscode.window.showInformationMessage(`Signed in to LabWired as ${session.account.label}`, 'Configure Agent Tools');
+                if (next === 'Configure Agent Tools') {
+                    yield (0, mcpSetup_1.configureAgentTools)(outputChannel);
+                }
             }
         }
         catch (e) {

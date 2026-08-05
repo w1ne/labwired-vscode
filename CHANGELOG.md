@@ -2,16 +2,14 @@
 
 ## 0.14.0
 
-### Agent tools without the forked Editor
+### Polish + agent tools on the existing extension
 
-- **LabWired: Configure Agent Tools (MCP)** writes `.vscode/mcp.json` pointing
-  at the shared hosted surface (`https://api.labwired.com/mcp`) — the same
-  `labwired_*` tools as playground and CLI.
-- **LabWired: Copy Claude MCP Install Line** for one-liner install outside VS Code.
-- Sign-in token can be embedded (with a git warning) or prompted via
-  `${input:labwired-token}`.
-- README positions this MIT extension as the **first ship vehicle**; the full
-  LabWired Editor remains a separate licensed product.
+- **Configure Agent Tools** writes `.vscode/mcp.json` for the shared hosted MCP
+  (`api.labwired.com/mcp`) — same `labwired_*` tools as playground and CLI.
+- **Copy Claude MCP Install Command** for Claude Code one-liner.
+- Sign-in offers “Configure Agent Tools”; status bar copy cleaned up.
+- Command palette titles normalized under the **LabWired** category.
+- README tightened for Marketplace (debug first, agent tools optional).
 
 ## 0.13.0
 
