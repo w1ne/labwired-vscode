@@ -151,12 +151,15 @@ export async function configureAgentTools(output: vscode.OutputChannel): Promise
 
     vscode.window
         .showInformationMessage(
-            'LabWired agent tools configured (same MCP tools as playground/CLI).',
+            'LabWired agent tools configured (same MCP tools as playground/CLI/OpenCode).',
+            'Start OpenCode Agent',
             'Copy Claude command',
             'Reload window'
         )
         .then(async (choice) => {
-            if (choice === 'Copy Claude command') {
+            if (choice === 'Start OpenCode Agent') {
+                await vscode.commands.executeCommand('labwired.startOpenCodeAgent');
+            } else if (choice === 'Copy Claude command') {
                 await vscode.env.clipboard.writeText(claude);
                 vscode.window.showInformationMessage('Copied Claude MCP install command.');
             } else if (choice === 'Reload window') {
