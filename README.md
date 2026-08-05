@@ -20,13 +20,21 @@ Same tools everywhere: `labwired_list`, `labwired_describe`, `labwired_compile`,
 2. **LabWired: Configure Agent Tools** → writes `.vscode/mcp.json` pointing at `https://api.labwired.com/mcp`.
 3. Use your editor’s agent chat; it can call those tools.
 
-Claude Code (outside VS Code):
+**OpenCode agent** (terminal, same tools):
+
+```bash
+curl -fsSL https://labwired.com/install | bash
+labwired login    # optional hosted MCP + model
+labwired          # starts OpenCode with skills + labwired_* tools
+```
+
+**Claude Code:**
 
 ```bash
 claude mcp add labwired --transport http https://api.labwired.com/mcp
 ```
 
-**LabWired: Copy Claude MCP Install Command** copies that line.
+**LabWired: Copy Claude MCP Install Command** copies the Claude line.
 
 Local debug and **Run Test (lab.yaml)** stay free and do not require sign-in.
 
