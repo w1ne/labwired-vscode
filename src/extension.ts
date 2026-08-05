@@ -25,6 +25,7 @@ import { bestFirmware } from './firmware';
 import { RegistersPanel } from './registersPanel';
 import { LabwiredAuthProvider, AUTH_ID, AUTH_LABEL, SCOPES } from './auth';
 import { configureAgentTools, copyClaudeMcpLine } from './mcpSetup';
+import { startOpenCodeAgent, copyAgentInstallCommand } from './openCodeAgent';
 
 type DebugEventLike = {
     session: { type: string };
@@ -377,6 +378,17 @@ export function activate(context: vscode.ExtensionContext) {
     }));
     context.subscriptions.push(vscode.commands.registerCommand('labwired.copyClaudeMcpInstall', async () => {
         await copyClaudeMcpLine();
+    }));
+
+    context.subscriptions.push(vscode.commands.registerCommand('labwired.startOpenCodeAgent', async () => {
+        try {
+            await startOpenCodeAgent(outputChannel);
+        } catch (e) {
+            vscode.window.showErrorMessage(`LabWired: Start OpenCode Agent failed: ${e instanceof Error ? e.message : e}`);
+        }
+    }));
+    context.subscriptions.push(vscode.commands.registerCommand('labwired.copyAgentInstall', async () => {
+        await copyAgentInstallCommand();
     }));
 
     // Simulator Management

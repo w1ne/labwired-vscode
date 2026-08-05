@@ -134,9 +134,12 @@ function configureAgentTools(output) {
         output.appendLine('  OpenCode agent (same tools): labwired login && labwired');
         output.show(true);
         vscode.window
-            .showInformationMessage('LabWired agent tools configured (same MCP tools as playground/CLI).', 'Copy Claude command', 'Reload window')
+            .showInformationMessage('LabWired agent tools configured (same MCP tools as playground/CLI/OpenCode).', 'Start OpenCode Agent', 'Copy Claude command', 'Reload window')
             .then((choice) => __awaiter(this, void 0, void 0, function* () {
-            if (choice === 'Copy Claude command') {
+            if (choice === 'Start OpenCode Agent') {
+                yield vscode.commands.executeCommand('labwired.startOpenCodeAgent');
+            }
+            else if (choice === 'Copy Claude command') {
                 yield vscode.env.clipboard.writeText(claude);
                 vscode.window.showInformationMessage('Copied Claude MCP install command.');
             }

@@ -36,6 +36,7 @@ const firmware_1 = require("./firmware");
 const registersPanel_1 = require("./registersPanel");
 const auth_1 = require("./auth");
 const mcpSetup_1 = require("./mcpSetup");
+const openCodeAgent_1 = require("./openCodeAgent");
 function handleLabwiredDebugEvent(e, deps) {
     var _a, _b, _c;
     if (e.session.type !== 'labwired') {
@@ -340,6 +341,17 @@ function activate(context) {
     })));
     context.subscriptions.push(vscode.commands.registerCommand('labwired.copyClaudeMcpInstall', () => __awaiter(this, void 0, void 0, function* () {
         yield (0, mcpSetup_1.copyClaudeMcpLine)();
+    })));
+    context.subscriptions.push(vscode.commands.registerCommand('labwired.startOpenCodeAgent', () => __awaiter(this, void 0, void 0, function* () {
+        try {
+            yield (0, openCodeAgent_1.startOpenCodeAgent)(outputChannel);
+        }
+        catch (e) {
+            vscode.window.showErrorMessage(`LabWired: Start OpenCode Agent failed: ${e instanceof Error ? e.message : e}`);
+        }
+    })));
+    context.subscriptions.push(vscode.commands.registerCommand('labwired.copyAgentInstall', () => __awaiter(this, void 0, void 0, function* () {
+        yield (0, openCodeAgent_1.copyAgentInstallCommand)();
     })));
     // Simulator Management
     const simulatorManager = new simulatorManager_1.SimulatorManager(outputChannel);
