@@ -16,54 +16,11 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.copyAgentInstallCommand = exports.startOpenCodeAgent = exports.agentInstallCommand = exports.resolveLabwiredAgentLauncher = exports.DEFAULT_AGENT_INSTALL = void 0;
 const vscode = require("vscode");
-const fs = require("fs");
-const os = require("os");
-const path = require("path");
-const child_process_1 = require("child_process");
-exports.DEFAULT_AGENT_INSTALL = 'curl -fsSL https://labwired.com/install | bash';
-/** Locate the `labwired` agent launcher (OpenCode entry), not the sim CLI alone. */
-function resolveLabwiredAgentLauncher(configuredPath) {
-    const configured = (configuredPath || '').trim();
-    if (configured && fs.existsSync(configured)) {
-        return configured;
-    }
-    const home = os.homedir();
-    const candidates = [
-        path.join(home, '.labwired', 'bin', 'labwired'),
-        path.join(home, '.labwired', 'agent', 'bin', 'labwired'),
-        path.join(home, '.local', 'bin', 'labwired'),
-    ];
-    for (const c of candidates) {
-        if (fs.existsSync(c)) {
-            return c;
-        }
-    }
-    try {
-        const locator = process.platform === 'win32' ? 'where' : 'which';
-        const found = (0, child_process_1.spawnSync)(locator, ['labwired'], { encoding: 'utf8' });
-        if (found.status === 0) {
-            const first = found.stdout
-                .split(/\r?\n/)
-                .map((s) => s.trim())
-                .filter(Boolean)[0];
-            if (first && fs.existsSync(first)) {
-                return first;
-            }
-        }
-    }
-    catch (_a) {
-        /* ignore */
-    }
-    return undefined;
-}
-exports.resolveLabwiredAgentLauncher = resolveLabwiredAgentLauncher;
-function agentInstallCommand() {
-    if (process.platform === 'win32') {
-        return 'irm https://labwired.com/install.ps1 | iex';
-    }
-    return exports.DEFAULT_AGENT_INSTALL;
-}
-exports.agentInstallCommand = agentInstallCommand;
+const openCodeAgentResolve_1 = require("./openCodeAgentResolve");
+var openCodeAgentResolve_2 = require("./openCodeAgentResolve");
+Object.defineProperty(exports, "DEFAULT_AGENT_INSTALL", { enumerable: true, get: function () { return openCodeAgentResolve_2.DEFAULT_AGENT_INSTALL; } });
+Object.defineProperty(exports, "resolveLabwiredAgentLauncher", { enumerable: true, get: function () { return openCodeAgentResolve_2.resolveLabwiredAgentLauncher; } });
+Object.defineProperty(exports, "agentInstallCommand", { enumerable: true, get: function () { return openCodeAgentResolve_2.agentInstallCommand; } });
 /**
  * Open an integrated terminal running the OpenCode agent with the same
  * labwired_* tools (hosted after login, local MCP otherwise).
@@ -74,11 +31,11 @@ function startOpenCodeAgent(output) {
         const configured = vscode.workspace
             .getConfiguration('labwired')
             .get('agentPath');
-        let launcher = resolveLabwiredAgentLauncher(configured);
+        let launcher = (0, openCodeAgentResolve_1.resolveLabwiredAgentLauncher)(configured);
         if (!launcher) {
             const pick = yield vscode.window.showInformationMessage('LabWired agent (OpenCode) is not installed. Install it the same way as the CLI tools path?', 'Install agent', 'Copy install command', 'Cancel');
             if (pick === 'Copy install command') {
-                yield vscode.env.clipboard.writeText(agentInstallCommand());
+                yield vscode.env.clipboard.writeText((0, openCodeAgentResolve_1.agentInstallCommand)());
                 vscode.window.showInformationMessage('Install command copied. Run it in a terminal, then retry Start OpenCode Agent.');
                 return;
             }
@@ -90,7 +47,7 @@ function startOpenCodeAgent(output) {
                 cwd: (_b = (_a = vscode.workspace.workspaceFolders) === null || _a === void 0 ? void 0 : _a[0]) === null || _b === void 0 ? void 0 : _b.uri.fsPath,
             });
             term.show(true);
-            term.sendText(agentInstallCommand(), true);
+            term.sendText((0, openCodeAgentResolve_1.agentInstallCommand)(), true);
             output.appendLine('LabWired [agent]: ran install in terminal — when finished, run LabWired: Start OpenCode Agent again.');
             return;
         }
@@ -98,12 +55,8 @@ function startOpenCodeAgent(output) {
         const term = vscode.window.createTerminal({
             name: 'LabWired OpenCode',
             cwd,
-            env: Object.assign({}, (process.env.LABWIRED_HOME
-                ? { LABWIRED_HOME: process.env.LABWIRED_HOME }
-                : {})),
         });
         term.show(true);
-        // Same entry as CLI: prepare skills + MCP then OpenCode TUI
         const quoted = process.platform === 'win32' ? `"${launcher}"` : `'${launcher.replace(/'/g, `'\\''`)}'`;
         term.sendText(quoted, true);
         output.appendLine(`LabWired [agent]: started OpenCode via ${launcher}`);
@@ -114,7 +67,7 @@ function startOpenCodeAgent(output) {
 exports.startOpenCodeAgent = startOpenCodeAgent;
 function copyAgentInstallCommand() {
     return __awaiter(this, void 0, void 0, function* () {
-        const cmd = agentInstallCommand();
+        const cmd = (0, openCodeAgentResolve_1.agentInstallCommand)();
         yield vscode.env.clipboard.writeText(cmd);
         vscode.window.showInformationMessage(`Copied: ${cmd}`);
     });

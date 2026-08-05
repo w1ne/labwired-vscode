@@ -4,15 +4,15 @@ const assert = require("assert");
 const os = require("os");
 const path = require("path");
 const fs = require("fs");
-const openCodeAgent_1 = require("../../openCodeAgent");
+const openCodeAgentResolve_1 = require("../../openCodeAgentResolve");
 describe('openCodeAgent — same tools runtime', () => {
     it('install command is platform-appropriate', () => {
-        const cmd = (0, openCodeAgent_1.agentInstallCommand)();
+        const cmd = (0, openCodeAgentResolve_1.agentInstallCommand)();
         if (process.platform === 'win32') {
             assert.ok(cmd.includes('install.ps1'));
         }
         else {
-            assert.strictEqual(cmd, openCodeAgent_1.DEFAULT_AGENT_INSTALL);
+            assert.strictEqual(cmd, openCodeAgentResolve_1.DEFAULT_AGENT_INSTALL);
         }
     });
     it('resolves an explicit configured path', () => {
@@ -20,7 +20,7 @@ describe('openCodeAgent — same tools runtime', () => {
         const fake = path.join(tmp, 'labwired');
         fs.writeFileSync(fake, '#!/bin/sh\n', { mode: 0o755 });
         try {
-            assert.strictEqual((0, openCodeAgent_1.resolveLabwiredAgentLauncher)(fake), fake);
+            assert.strictEqual((0, openCodeAgentResolve_1.resolveLabwiredAgentLauncher)(fake), fake);
         }
         finally {
             fs.rmSync(tmp, { recursive: true, force: true });
@@ -30,7 +30,7 @@ describe('openCodeAgent — same tools runtime', () => {
         // Non-existent path; may still find real labwired on PATH — only assert
         // that a nonsense absolute path is not returned as-is when missing.
         const missing = path.join(os.tmpdir(), 'no-such-labwired-agent-bin-xyz');
-        const got = (0, openCodeAgent_1.resolveLabwiredAgentLauncher)(missing);
+        const got = (0, openCodeAgentResolve_1.resolveLabwiredAgentLauncher)(missing);
         assert.notStrictEqual(got, missing);
     });
 });
