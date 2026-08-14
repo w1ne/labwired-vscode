@@ -17,12 +17,11 @@ import * as https from 'https';
 import { URL } from 'url';
 import * as vscode from 'vscode';
 import { DEFAULT_API_URL } from './mcpConfig';
-import { errorClass, fingerprint, platformSlug } from './crashFingerprint';
+import { errorClass, fingerprint, platformSlug, type BinarySource } from './crashFingerprint';
 
 /** One report per distinct failure per session. A retry loop is not new data. */
 const reported = new Set<string>();
 
-export type BinarySource = 'bundled' | 'path' | 'downloaded' | 'configured' | 'unknown';
 
 function optedOut(): boolean {
     // VS Code's own telemetry switch governs this too: a user who turned that
@@ -36,6 +35,8 @@ function apiBase(): string {
     const configured = vscode.workspace.getConfiguration('labwired').get<string>('apiUrl');
     return (configured && configured.trim()) || DEFAULT_API_URL;
 }
+
+export type { BinarySource };
 
 export interface CrashContext {
     /** Where in the extension's work it went wrong. */

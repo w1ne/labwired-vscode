@@ -26,4 +26,23 @@ describe('extension crash reporting', () => {
         assert.strictEqual((0, crashFingerprint_1.platformSlug)('linux', 'riscv64'), 'unknown');
     });
 });
+describe('where the binary came from', () => {
+    it('names a source for every step of the resolution cascade', () => {
+        // `host_class` is the field that separates "our release is broken" from
+        // "their PATH has something else on it". It shipped as a typed,
+        // documented field that no call site ever passed, so every report read
+        // `unknown`. These are the values cli.ts now records.
+        const sources = ['configured', 'bundled', 'downloaded', 'path', 'unknown'];
+        assert.strictEqual(new Set(sources).size, sources.length);
+    });
+    it('answers unknown for a binary that never resolved, rather than guessing', () => {
+        assert.strictEqual((0, crashFingerprint_1.binarySourceOf)('never-resolved-binary'), 'unknown');
+    });
+    it('remembers what the resolver recorded', () => {
+        (0, crashFingerprint_1.setBinarySource)('labwired', 'path');
+        assert.strictEqual((0, crashFingerprint_1.binarySourceOf)('labwired'), 'path');
+        (0, crashFingerprint_1.setBinarySource)('labwired', 'downloaded');
+        assert.strictEqual((0, crashFingerprint_1.binarySourceOf)('labwired'), 'downloaded');
+    });
+});
 //# sourceMappingURL=crashReport.test.js.map
