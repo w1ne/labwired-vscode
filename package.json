@@ -57,6 +57,11 @@
                     "default": "",
                     "description": "Path to the labwired-dap debug adapter. Leave empty to use the binary from the downloaded LabWired release."
                 },
+                "labwired.telemetry.enabled": {
+                    "type": "boolean",
+                    "default": true,
+                    "markdownDescription": "Report extension failures (never messages, paths or file names — only an enumerated class and a fingerprint). VS Code's own telemetry setting also governs this: turning that off turns this off."
+                },
                 "labwired.cliPath": {
                     "type": "string",
                     "default": "",

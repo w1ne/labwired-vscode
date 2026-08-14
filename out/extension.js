@@ -31,6 +31,7 @@ const topologyPanel_1 = require("./topologyPanel");
 const simulatorView_1 = require("./simulatorView");
 const configWizard_1 = require("./configWizard");
 const cli_1 = require("./cli");
+const crashReport_1 = require("./crashReport");
 const labConfig_1 = require("./labConfig");
 const firmware_1 = require("./firmware");
 const registersPanel_1 = require("./registersPanel");
@@ -264,6 +265,8 @@ class LabwiredDebugAdapterDescriptorFactory {
             }
             catch (e) {
                 const message = e instanceof Error ? e.message : String(e);
+                // The failure a user is least able to describe: F5 did nothing.
+                (0, crashReport_1.reportCrash)(e, { stage: 'download', extensionVersion: extensionVersion(this.context) });
                 vscode.window.showErrorMessage(`LabWired: could not find the debug adapter. ${message}`);
                 throw e;
             }
@@ -273,6 +276,12 @@ class LabwiredDebugAdapterDescriptorFactory {
     }
 }
 exports.LabwiredDebugAdapterDescriptorFactory = LabwiredDebugAdapterDescriptorFactory;
+/** The version a report is attributed to; `unknown` rather than a guess. */
+function extensionVersion(context) {
+    var _a, _b;
+    const version = (_b = (_a = context.extension) === null || _a === void 0 ? void 0 : _a.packageJSON) === null || _b === void 0 ? void 0 : _b.version;
+    return typeof version === 'string' ? version : 'unknown';
+}
 function activate(context) {
     const outputChannel = vscode.window.createOutputChannel("LabWired");
     context.subscriptions.push(outputChannel);
@@ -616,7 +625,14 @@ function compileAndRun(context, outputChannel, simulatorManager) {
             outputChannel.appendLine(`LabWired: Failed to read lab.yaml: ${e}`);
         }
         // 4. Run the SAME command CI runs: labwired test --script <lab.yaml> ...
-        const cli = yield (0, cli_1.resolveCli)(context, outputChannel);
+        let cli;
+        try {
+            cli = yield (0, cli_1.resolveCli)(context, outputChannel);
+        }
+        catch (e) {
+            (0, crashReport_1.reportCrash)(e, { stage: 'download', extensionVersion: extensionVersion(context) });
+            throw e;
+        }
         const { exitCode, result } = yield (0, cli_1.runTest)(cli, {
             script: labConfigPath,
             cwd: rootPath,
