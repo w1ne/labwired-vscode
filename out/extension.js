@@ -31,6 +31,7 @@ const topologyPanel_1 = require("./topologyPanel");
 const simulatorView_1 = require("./simulatorView");
 const configWizard_1 = require("./configWizard");
 const cli_1 = require("./cli");
+const crashFingerprint_1 = require("./crashFingerprint");
 const crashReport_1 = require("./crashReport");
 const labConfig_1 = require("./labConfig");
 const firmware_1 = require("./firmware");
@@ -266,7 +267,11 @@ class LabwiredDebugAdapterDescriptorFactory {
             catch (e) {
                 const message = e instanceof Error ? e.message : String(e);
                 // The failure a user is least able to describe: F5 did nothing.
-                (0, crashReport_1.reportCrash)(e, { stage: 'download', extensionVersion: extensionVersion(this.context) });
+                (0, crashReport_1.reportCrash)(e, {
+                    stage: 'download',
+                    binarySource: (0, crashFingerprint_1.binarySourceOf)(cli_1.DAP_BIN),
+                    extensionVersion: extensionVersion(this.context),
+                });
                 vscode.window.showErrorMessage(`LabWired: could not find the debug adapter. ${message}`);
                 throw e;
             }
@@ -283,6 +288,19 @@ function extensionVersion(context) {
     return typeof version === 'string' ? version : 'unknown';
 }
 function activate(context) {
+    // An extension that throws during activation is dead in a way the user
+    // sees as "the commands are missing", with no error anywhere they will
+    // look. Report it, then re-throw so VS Code's own handling is unchanged.
+    try {
+        return activateInner(context);
+    }
+    catch (e) {
+        (0, crashReport_1.reportCrash)(e, { stage: 'boot', extensionVersion: extensionVersion(context) });
+        throw e;
+    }
+}
+exports.activate = activate;
+function activateInner(context) {
     const outputChannel = vscode.window.createOutputChannel("LabWired");
     context.subscriptions.push(outputChannel);
     outputChannel.appendLine("LabWired Activated.");
@@ -550,7 +568,6 @@ function activate(context) {
     dashboardBtn.show();
     context.subscriptions.push(dashboardBtn);
 }
-exports.activate = activate;
 function compileAndRun(context, outputChannel, simulatorManager) {
     var _a;
     return __awaiter(this, void 0, void 0, function* () {
@@ -630,16 +647,34 @@ function compileAndRun(context, outputChannel, simulatorManager) {
             cli = yield (0, cli_1.resolveCli)(context, outputChannel);
         }
         catch (e) {
-            (0, crashReport_1.reportCrash)(e, { stage: 'download', extensionVersion: extensionVersion(context) });
+            (0, crashReport_1.reportCrash)(e, {
+                stage: 'download',
+                binarySource: (0, crashFingerprint_1.binarySourceOf)(cli_1.CLI_BIN),
+                extensionVersion: extensionVersion(context),
+            });
             throw e;
         }
-        const { exitCode, result } = yield (0, cli_1.runTest)(cli, {
-            script: labConfigPath,
-            cwd: rootPath,
-            outputDir,
-            firmware,
-            apiKey: undefined,
-        }, outputChannel);
+        let exitCode;
+        let result;
+        try {
+            ({ exitCode, result } = yield (0, cli_1.runTest)(cli, {
+                script: labConfigPath,
+                cwd: rootPath,
+                outputDir,
+                firmware,
+                apiKey: undefined,
+            }, outputChannel));
+        }
+        catch (e) {
+            // Resolving the binary is only half the Run button; this is the half
+            // where a binary that cannot start on this machine shows up.
+            (0, crashReport_1.reportCrash)(e, {
+                stage: 'run',
+                binarySource: (0, crashFingerprint_1.binarySourceOf)(cli_1.CLI_BIN),
+                extensionVersion: extensionVersion(context),
+            });
+            throw e;
+        }
         outputChannel.show();
         const status = result === null || result === void 0 ? void 0 : result.status;
         const passed = status ? status === 'pass' || status === 'passed' : exitCode === 0;
