@@ -4,6 +4,19 @@ Debug firmware on a **virtual chip** — breakpoints, stepping (including revers
 
 Optionally connect **agent tools** (the same `labwired_*` MCP surface as the Playground and CLI) so Copilot, Claude Code, or Cursor can compile, run, and verify firmware on the twin.
 
+## Install
+
+- **VS Code** — search *LabWired* in Extensions, or
+  `code --install-extension w1ne.labwired-vscode`
+- **VSCodium, Cursor, Windsurf, Theia** — search *LabWired*; the extension is
+  published to Open VSX as well.
+- **Any editor, no registry** — download `labwired-vscode.vsix` from the
+  [latest release](https://github.com/w1ne/labwired-vscode/releases/latest) and
+  run *Extensions: Install from VSIX…*
+
+Linux, macOS and Windows, on Intel and Arm. The simulator and debug adapter
+download themselves on first use; nothing needs a Rust toolchain.
+
 ## Get started
 
 1. Install the extension.

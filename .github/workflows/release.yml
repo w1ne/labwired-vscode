@@ -24,6 +24,7 @@ jobs:
     # skips publishing forever, even when the secret is set correctly.
     env:
       VSCE_PAT: ${{ secrets.VSCE_PAT }}
+      OVSX_PAT: ${{ secrets.OVSX_PAT }}
     steps:
       - uses: actions/checkout@v4
 
@@ -74,11 +75,19 @@ jobs:
         if: env.VSCE_PAT != ''
         run: npx @vscode/vsce publish --packagePath labwired-vscode.vsix
 
-      - name: Report that publishing was skipped
-        if: env.VSCE_PAT == ''
+      # Open VSX is where VSCodium, Cursor, Windsurf and the Eclipse Theia
+      # editors install from. Publishing only to the Microsoft Marketplace
+      # leaves every one of those users on a manual .vsix.
+      - name: Publish to Open VSX
+        if: env.OVSX_PAT != ''
+        run: npx ovsx publish labwired-vscode.vsix -p "$OVSX_PAT"
+
+      - name: Report which registries this tag did not reach
+        if: env.VSCE_PAT == '' || env.OVSX_PAT == ''
         run: |
-          echo "::warning::VSCE_PAT is not set — this tag did NOT reach the Marketplace." \
-               "The .vsix is attached to the GitHub release instead."
+          [ -n "$VSCE_PAT" ] || echo "::warning::VSCE_PAT is not set — this tag did NOT reach the VS Code Marketplace."
+          [ -n "$OVSX_PAT" ] || echo "::warning::OVSX_PAT is not set — this tag did NOT reach Open VSX (VSCodium, Cursor, Windsurf)."
+          echo "::warning::The .vsix is attached to the GitHub release instead. Installing it by hand is the only path for those users."
 
       - name: Attach the .vsix to the GitHub release
         if: startsWith(github.ref, 'refs/tags/')
