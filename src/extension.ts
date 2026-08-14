@@ -20,6 +20,7 @@ import { SystemTopologyPanel } from './topologyPanel';
 import { SimulatorViewProvider } from './simulatorView';
 import { showConfigWizard } from './configWizard';
 import { resolveCli, resolveDap, runTest } from './cli';
+import { reportCrash } from './crashReport';
 import { findLabConfig, readLabConfig, migrateLabConfig } from './labConfig';
 import { bestFirmware } from './firmware';
 import { RegistersPanel } from './registersPanel';
@@ -293,6 +294,8 @@ export class LabwiredDebugAdapterDescriptorFactory implements vscode.DebugAdapte
             dapPath = await resolveDap(this.context, this.output);
         } catch (e) {
             const message = e instanceof Error ? e.message : String(e);
+            // The failure a user is least able to describe: F5 did nothing.
+            reportCrash(e, { stage: 'download', extensionVersion: extensionVersion(this.context) });
             vscode.window.showErrorMessage(`LabWired: could not find the debug adapter. ${message}`);
             throw e;
         }
@@ -301,6 +304,12 @@ export class LabwiredDebugAdapterDescriptorFactory implements vscode.DebugAdapte
 
         return new vscode.DebugAdapterExecutable(dapPath, []);
     }
+}
+
+/** The version a report is attributed to; `unknown` rather than a guess. */
+function extensionVersion(context: vscode.ExtensionContext): string {
+    const version = (context.extension?.packageJSON as { version?: string } | undefined)?.version;
+    return typeof version === 'string' ? version : 'unknown';
 }
 
 export function activate(context: vscode.ExtensionContext) {
@@ -715,7 +724,13 @@ async function compileAndRun(context: vscode.ExtensionContext, outputChannel: vs
     }
 
     // 4. Run the SAME command CI runs: labwired test --script <lab.yaml> ...
-    const cli = await resolveCli(context, outputChannel);
+    let cli: string;
+    try {
+        cli = await resolveCli(context, outputChannel);
+    } catch (e) {
+        reportCrash(e, { stage: 'download', extensionVersion: extensionVersion(context) });
+        throw e;
+    }
     const { exitCode, result } = await runTest(cli, {
         script: labConfigPath,
         cwd: rootPath,
