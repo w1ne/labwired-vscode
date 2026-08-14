@@ -9,21 +9,19 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as https from 'https';
 import { spawn, spawnSync } from 'child_process';
+import { assetFor } from './platformAssets';
 
-export const CLI_VERSION = 'v0.19.3';
+// The core release this extension downloads. Kept at the newest release on
+// purpose: pinning two releases back is how the debugger shipped against a CLI
+// that predated half the boards in the docs.
+export const CLI_VERSION = 'v0.22.0';
 
 /** The simulator/test-runner CLI. */
 export const CLI_BIN = 'labwired';
 /** The Debug Adapter the extension spawns for F5. Ships in the SAME tarball. */
 export const DAP_BIN = 'labwired-dap';
 
-// Maps Node's process.platform/process.arch onto the release-asset platform slug.
-const PLATFORM_ASSETS: Record<string, string> = {
-    'darwin/arm64': 'darwin-aarch64',
-    'darwin/x64': 'darwin-x86_64',
-    'linux/x64': 'linux-x86_64',
-    'linux/arm64': 'linux-aarch64',
-};
+
 
 export interface TestResult {
     exitCode: number;
@@ -148,11 +146,7 @@ let inFlightDownload: Promise<string> | undefined;
  * single download serves the Run button and the debugger alike.
  */
 async function downloadRelease(context: vscode.ExtensionContext, output?: vscode.OutputChannel): Promise<string> {
-    if (process.platform === 'win32') {
-        throw new Error('Set labwired.cliPath — Windows auto-download is not available yet.');
-    }
-
-    const platform = PLATFORM_ASSETS[`${process.platform}/${process.arch}`];
+    const platform = assetFor(process.platform, process.arch);
     if (!platform) {
         throw new Error(
             `Unsupported platform ${process.platform}/${process.arch}. Set labwired.cliPath to a labwired binary.`
