@@ -7,6 +7,25 @@
  * "never put a path in this".
  */
 
+/** Where a resolved binary came from. `unknown` is a real answer, not a gap. */
+export type BinarySource = 'bundled' | 'path' | 'downloaded' | 'configured' | 'unknown';
+
+/**
+ * Which source each binary last resolved from. It lives here, in the module
+ * with no editor import, for the third time today's lesson came up: anything a
+ * unit test needs to reach cannot sit behind `import * as vscode`.
+ */
+const binarySources = new Map<string, BinarySource>();
+
+export function setBinarySource(bin: string, source: BinarySource): void {
+    binarySources.set(bin, source);
+}
+
+/** Where `bin` was last resolved from, or `unknown` if it never resolved. */
+export function binarySourceOf(bin: string): BinarySource {
+    return binarySources.get(bin) ?? 'unknown';
+}
+
 /** node's process.platform/arch in the vocabulary the release archives use. */
 export function platformSlug(platform: string, arch: string): string {
     const map: Record<string, string> = {

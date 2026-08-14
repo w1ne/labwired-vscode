@@ -10,6 +10,7 @@ import * as fs from 'fs';
 import * as https from 'https';
 import { spawn, spawnSync } from 'child_process';
 import { assetFor } from './platformAssets';
+import { setBinarySource, type BinarySource } from './crashFingerprint';
 
 // The core release this extension downloads. Kept at the newest release on
 // purpose: pinning two releases back is how the debugger shipped against a CLI
@@ -49,6 +50,11 @@ function binName(bin: string): string {
 // Cache of resolved binary paths, keyed by bare binary name, for the lifetime
 // of the extension host.
 const cachedPaths = new Map<string, string>();
+
+// Where each resolved binary came from is recorded in crashFingerprint.ts:
+// a crash report that says only "the simulator failed" cannot separate a
+// broken release from a stale binary on somebody's PATH, and that module is
+// the one a unit test can load.
 
 function log(output: vscode.OutputChannel | undefined, msg: string): void {
     if (output) {
@@ -197,6 +203,7 @@ async function resolveBinary(
     // 1. Explicit setting.
     const configured = vscode.workspace.getConfiguration('labwired').get<string>(settingKey);
     if (configured && configured.trim().length > 0 && existsFile(configured.trim())) {
+        setBinarySource(bin, 'configured');
         return configured.trim();
     }
 
@@ -205,8 +212,9 @@ async function resolveBinary(
         return cached;
     }
 
-    const remember = (p: string): string => {
+    const remember = (p: string, source: BinarySource): string => {
         cachedPaths.set(bin, p);
+        setBinarySource(bin, source);
         return p;
     };
 
@@ -217,7 +225,7 @@ async function resolveBinary(
         path.join(extPath, 'bin', binName(bin)),
     ]) {
         if (existsFile(p)) {
-            return remember(p);
+            return remember(p, 'bundled');
         }
     }
 
@@ -227,13 +235,13 @@ async function resolveBinary(
     const alreadyDownloaded = findBinary(cacheDir, bin);
     if (alreadyDownloaded && existsFile(alreadyDownloaded)) {
         fs.chmodSync(alreadyDownloaded, 0o755);
-        return remember(alreadyDownloaded);
+        return remember(alreadyDownloaded, 'downloaded');
     }
 
     // 4. On PATH.
     const onPathResolved = onPath(bin, output);
     if (onPathResolved) {
-        return remember(onPathResolved);
+        return remember(onPathResolved, 'path');
     }
 
     // 5. Download the release tarball (once, shared between both binaries).
@@ -252,7 +260,7 @@ async function resolveBinary(
         );
     }
     fs.chmodSync(binary, 0o755);
-    return remember(binary);
+    return remember(binary, 'downloaded');
 }
 
 /** Resolve the `labwired` CLI (the `labwired test` runner behind the Run button). */

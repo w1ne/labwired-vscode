@@ -8,7 +8,23 @@
  * "never put a path in this".
  */
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.errorClass = exports.fingerprint = exports.platformSlug = void 0;
+exports.errorClass = exports.fingerprint = exports.platformSlug = exports.binarySourceOf = exports.setBinarySource = void 0;
+/**
+ * Which source each binary last resolved from. It lives here, in the module
+ * with no editor import, for the third time today's lesson came up: anything a
+ * unit test needs to reach cannot sit behind `import * as vscode`.
+ */
+const binarySources = new Map();
+function setBinarySource(bin, source) {
+    binarySources.set(bin, source);
+}
+exports.setBinarySource = setBinarySource;
+/** Where `bin` was last resolved from, or `unknown` if it never resolved. */
+function binarySourceOf(bin) {
+    var _a;
+    return (_a = binarySources.get(bin)) !== null && _a !== void 0 ? _a : 'unknown';
+}
+exports.binarySourceOf = binarySourceOf;
 /** node's process.platform/arch in the vocabulary the release archives use. */
 function platformSlug(platform, arch) {
     var _a;

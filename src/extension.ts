@@ -19,7 +19,8 @@ import { SimulatorManager } from './simulatorManager';
 import { SystemTopologyPanel } from './topologyPanel';
 import { SimulatorViewProvider } from './simulatorView';
 import { showConfigWizard } from './configWizard';
-import { resolveCli, resolveDap, runTest } from './cli';
+import { resolveCli, resolveDap, runTest, CLI_BIN, DAP_BIN } from './cli';
+import { binarySourceOf } from './crashFingerprint';
 import { reportCrash } from './crashReport';
 import { findLabConfig, readLabConfig, migrateLabConfig } from './labConfig';
 import { bestFirmware } from './firmware';
@@ -295,7 +296,11 @@ export class LabwiredDebugAdapterDescriptorFactory implements vscode.DebugAdapte
         } catch (e) {
             const message = e instanceof Error ? e.message : String(e);
             // The failure a user is least able to describe: F5 did nothing.
-            reportCrash(e, { stage: 'download', extensionVersion: extensionVersion(this.context) });
+            reportCrash(e, {
+                stage: 'download',
+                binarySource: binarySourceOf(DAP_BIN),
+                extensionVersion: extensionVersion(this.context),
+            });
             vscode.window.showErrorMessage(`LabWired: could not find the debug adapter. ${message}`);
             throw e;
         }
@@ -313,6 +318,18 @@ function extensionVersion(context: vscode.ExtensionContext): string {
 }
 
 export function activate(context: vscode.ExtensionContext) {
+    // An extension that throws during activation is dead in a way the user
+    // sees as "the commands are missing", with no error anywhere they will
+    // look. Report it, then re-throw so VS Code's own handling is unchanged.
+    try {
+        return activateInner(context);
+    } catch (e) {
+        reportCrash(e, { stage: 'boot', extensionVersion: extensionVersion(context) });
+        throw e;
+    }
+}
+
+function activateInner(context: vscode.ExtensionContext) {
     const outputChannel = vscode.window.createOutputChannel("LabWired");
     context.subscriptions.push(outputChannel);
     outputChannel.appendLine("LabWired Activated.");
@@ -728,16 +745,33 @@ async function compileAndRun(context: vscode.ExtensionContext, outputChannel: vs
     try {
         cli = await resolveCli(context, outputChannel);
     } catch (e) {
-        reportCrash(e, { stage: 'download', extensionVersion: extensionVersion(context) });
+        reportCrash(e, {
+            stage: 'download',
+            binarySource: binarySourceOf(CLI_BIN),
+            extensionVersion: extensionVersion(context),
+        });
         throw e;
     }
-    const { exitCode, result } = await runTest(cli, {
-        script: labConfigPath,
-        cwd: rootPath,
-        outputDir,
-        firmware,
-        apiKey: undefined,
-    }, outputChannel);
+    let exitCode: number;
+    let result: Awaited<ReturnType<typeof runTest>>['result'];
+    try {
+        ({ exitCode, result } = await runTest(cli, {
+            script: labConfigPath,
+            cwd: rootPath,
+            outputDir,
+            firmware,
+            apiKey: undefined,
+        }, outputChannel));
+    } catch (e) {
+        // Resolving the binary is only half the Run button; this is the half
+        // where a binary that cannot start on this machine shows up.
+        reportCrash(e, {
+            stage: 'run',
+            binarySource: binarySourceOf(CLI_BIN),
+            extensionVersion: extensionVersion(context),
+        });
+        throw e;
+    }
 
     outputChannel.show();
 

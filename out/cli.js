@@ -21,6 +21,7 @@ const fs = require("fs");
 const https = require("https");
 const child_process_1 = require("child_process");
 const platformAssets_1 = require("./platformAssets");
+const crashFingerprint_1 = require("./crashFingerprint");
 // The core release this extension downloads. Kept at the newest release on
 // purpose: pinning two releases back is how the debugger shipped against a CLI
 // that predated half the boards in the docs.
@@ -39,6 +40,10 @@ function binName(bin) {
 // Cache of resolved binary paths, keyed by bare binary name, for the lifetime
 // of the extension host.
 const cachedPaths = new Map();
+// Where each resolved binary came from is recorded in crashFingerprint.ts:
+// a crash report that says only "the simulator failed" cannot separate a
+// broken release from a stale binary on somebody's PATH, and that module is
+// the one a unit test can load.
 function log(output, msg) {
     if (output) {
         output.appendLine(`LabWired [cli]: ${msg}`);
@@ -172,14 +177,16 @@ function resolveBinary(bin, settingKey, context, output) {
         // 1. Explicit setting.
         const configured = vscode.workspace.getConfiguration('labwired').get(settingKey);
         if (configured && configured.trim().length > 0 && existsFile(configured.trim())) {
+            (0, crashFingerprint_1.setBinarySource)(bin, 'configured');
             return configured.trim();
         }
         const cached = cachedPaths.get(bin);
         if (cached && existsFile(cached)) {
             return cached;
         }
-        const remember = (p) => {
+        const remember = (p, source) => {
             cachedPaths.set(bin, p);
+            (0, crashFingerprint_1.setBinarySource)(bin, source);
             return p;
         };
         // 2. Bundled with the extension.
@@ -189,7 +196,7 @@ function resolveBinary(bin, settingKey, context, output) {
             path.join(extPath, 'bin', binName(bin)),
         ]) {
             if (existsFile(p)) {
-                return remember(p);
+                return remember(p, 'bundled');
             }
         }
         // 3. Already extracted by an earlier download of this same version.
@@ -198,12 +205,12 @@ function resolveBinary(bin, settingKey, context, output) {
         const alreadyDownloaded = findBinary(cacheDir, bin);
         if (alreadyDownloaded && existsFile(alreadyDownloaded)) {
             fs.chmodSync(alreadyDownloaded, 0o755);
-            return remember(alreadyDownloaded);
+            return remember(alreadyDownloaded, 'downloaded');
         }
         // 4. On PATH.
         const onPathResolved = onPath(bin, output);
         if (onPathResolved) {
-            return remember(onPathResolved);
+            return remember(onPathResolved, 'path');
         }
         // 5. Download the release tarball (once, shared between both binaries).
         if (!inFlightDownload) {
@@ -218,7 +225,7 @@ function resolveBinary(bin, settingKey, context, output) {
                 `It ships from v0.19.3 onward — raise 'labwired.cliVersion', or set '${settingKey}' to your own build.`);
         }
         fs.chmodSync(binary, 0o755);
-        return remember(binary);
+        return remember(binary, 'downloaded');
     });
 }
 /** Resolve the `labwired` CLI (the `labwired test` runner behind the Run button). */
