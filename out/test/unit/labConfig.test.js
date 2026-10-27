@@ -251,5 +251,27 @@ describe('model profile lab.yaml', () => {
             fs.rmSync(testScript, { force: true });
         }
     }));
+    it('preserves large YAML integers exactly when creating the core test script', () => __awaiter(void 0, void 0, void 0, function* () {
+        const profile = [
+            'schema_version: "1.2"',
+            'inputs: {}',
+            'limits:',
+            '  max_vcd_bytes: 0x123456789abcdef0',
+            '  max_uart_bytes: 18446744073709551615',
+            'debug:',
+            '  adapter: {}',
+        ].join('\n') + '\n';
+        fs.writeFileSync(configFile, profile);
+        const module = require('../../labConfig');
+        const testScript = yield module.createCoreCompatibleTestScript(configFile);
+        try {
+            const serialized = fs.readFileSync(testScript, 'utf8');
+            assert.ok(serialized.includes('max_vcd_bytes: 0x123456789abcdef0'));
+            assert.ok(serialized.includes('max_uart_bytes: 18446744073709551615'));
+        }
+        finally {
+            fs.rmSync(testScript, { force: true });
+        }
+    }));
 });
 //# sourceMappingURL=labConfig.test.js.map
