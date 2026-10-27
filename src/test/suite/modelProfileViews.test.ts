@@ -17,6 +17,25 @@ suite('model profile views', function () {
     let workspaceFolder: vscode.WorkspaceFolder;
     let workspaceFoldersDescriptor: PropertyDescriptor | undefined;
 
+    function createProfile(name: string) {
+        const profileRoot = fs.mkdtempSync(path.join(os.tmpdir(), `lw-model-${name.toLowerCase().replace(/\s+/g, '-')}-`));
+        const systemPath = path.join(profileRoot, 'config', 'system.yaml');
+        fs.mkdirSync(path.dirname(systemPath), { recursive: true });
+        fs.writeFileSync(systemPath, `name: ${name}\nchip: ${name}\n`);
+        fs.mkdirSync(path.join(profileRoot, '.labwired'), { recursive: true });
+        fs.writeFileSync(path.join(profileRoot, '.labwired', 'lab.yaml'), yaml.dump({
+            schema_version: '1.0',
+            inputs: { system: '../config/system.yaml' },
+        }));
+        const folder = {
+            uri: vscode.Uri.file(profileRoot), name, index: 0,
+        } as vscode.WorkspaceFolder;
+        const editor = {
+            document: { uri: vscode.Uri.file(path.join(profileRoot, 'src', 'main.rs')) },
+        } as vscode.TextEditor;
+        return { root: profileRoot, systemPath, folder, editor };
+    }
+
     suiteSetup(async () => {
         root = fs.mkdtempSync(path.join(os.tmpdir(), 'lw-model-views-'));
         systemFile = path.join(root, 'crates', 'chips', 'k32w041z-system.yaml');
@@ -143,9 +162,151 @@ suite('model profile views', function () {
             assert.strictEqual(topologyBoard?.name, 'Active Session Workspace');
         } finally {
             if (originalFolders) Object.defineProperty(workspaceApi, 'workspaceFolders', originalFolders);
+            else delete workspaceApi.workspaceFolders;
             if (originalSession) Object.defineProperty(debugApi, 'activeDebugSession', originalSession);
             else delete debugApi.activeDebugSession;
             fs.rmSync(secondRoot, { recursive: true, force: true });
+        }
+    });
+
+    test('an unrelated debugger session does not override the active editor model folder', async () => {
+        const folderA = createProfile('Debugger Folder A');
+        const folderB = createProfile('Editor Model Folder B');
+        const workspaceApi = vscode.workspace as any;
+        const originalFolders = Object.getOwnPropertyDescriptor(workspaceApi, 'workspaceFolders');
+        const debugApi = vscode.debug as any;
+        const originalSession = Object.getOwnPropertyDescriptor(debugApi, 'activeDebugSession');
+        const windowApi = vscode.window as any;
+        const originalEditor = Object.getOwnPropertyDescriptor(windowApi, 'activeTextEditor');
+        try {
+            Object.defineProperty(workspaceApi, 'workspaceFolders', {
+                configurable: true,
+                value: [folderA.folder, folderB.folder],
+            });
+            Object.defineProperty(debugApi, 'activeDebugSession', {
+                configurable: true,
+                get: () => ({ type: 'python', workspaceFolder: folderA.folder, configuration: {} }),
+            });
+            Object.defineProperty(windowApi, 'activeTextEditor', {
+                configurable: true,
+                get: () => folderB.editor,
+            });
+
+            const messages: any[] = [];
+            const commandCenter = new LabwiredCommandCenterProvider(vscode.Uri.file(folderB.root), true);
+            (commandCenter as any)._view = { webview: { postMessage: (message: any) => messages.push(message) } };
+            await commandCenter.updateBoard();
+            const topology = Object.create(SystemTopologyPanel.prototype) as any;
+            const topologyBoard = await topology._getBoardData();
+            const commandCenterBoard = messages.find((message) => message.type === 'boardUpdate')?.data;
+
+            assert.strictEqual(commandCenterBoard?.name, 'Editor Model Folder B');
+            assert.strictEqual(topologyBoard?.name, 'Editor Model Folder B');
+        } finally {
+            if (originalFolders) Object.defineProperty(workspaceApi, 'workspaceFolders', originalFolders);
+            else delete workspaceApi.workspaceFolders;
+            if (originalSession) Object.defineProperty(debugApi, 'activeDebugSession', originalSession);
+            else delete debugApi.activeDebugSession;
+            if (originalEditor) Object.defineProperty(windowApi, 'activeTextEditor', originalEditor);
+            else delete windowApi.activeTextEditor;
+            fs.rmSync(folderA.root, { recursive: true, force: true });
+            fs.rmSync(folderB.root, { recursive: true, force: true });
+        }
+    });
+
+    test('both views refresh to the editor model folder after an editor change without a LabWired session', async () => {
+        const folderA = createProfile('First Editor Model');
+        const folderB = createProfile('Second Editor Model');
+        const workspaceApi = vscode.workspace as any;
+        const originalFolders = Object.getOwnPropertyDescriptor(workspaceApi, 'workspaceFolders');
+        const originalCreateWatcher = Object.getOwnPropertyDescriptor(workspaceApi, 'createFileSystemWatcher');
+        const debugApi = vscode.debug as any;
+        const originalSession = Object.getOwnPropertyDescriptor(debugApi, 'activeDebugSession');
+        const originalSessionChange = Object.getOwnPropertyDescriptor(debugApi, 'onDidChangeActiveDebugSession');
+        const windowApi = vscode.window as any;
+        const originalEditor = Object.getOwnPropertyDescriptor(windowApi, 'activeTextEditor');
+        const originalEditorChange = Object.getOwnPropertyDescriptor(windowApi, 'onDidChangeActiveTextEditor');
+        let currentEditor: vscode.TextEditor = folderA.editor;
+        const editorChangeListeners: Array<(editor: vscode.TextEditor | undefined) => unknown> = [];
+        const commandCenterMessages: any[] = [];
+        const topologyMessages: any[] = [];
+        const disposable = { dispose: () => undefined };
+        try {
+            Object.defineProperty(workspaceApi, 'workspaceFolders', {
+                configurable: true,
+                value: [folderA.folder, { ...folderB.folder, index: 1 }],
+            });
+            workspaceApi.createFileSystemWatcher = () => ({
+                onDidChange: () => disposable,
+                onDidCreate: () => disposable,
+                onDidDelete: () => disposable,
+                dispose: () => undefined,
+            });
+            Object.defineProperty(debugApi, 'activeDebugSession', {
+                configurable: true,
+                get: () => undefined,
+            });
+            debugApi.onDidChangeActiveDebugSession = () => disposable;
+            Object.defineProperty(windowApi, 'activeTextEditor', {
+                configurable: true,
+                get: () => currentEditor,
+            });
+            windowApi.onDidChangeActiveTextEditor = (listener: (editor: vscode.TextEditor | undefined) => unknown) => {
+                editorChangeListeners.push(listener);
+                return disposable;
+            };
+
+            const webview: any = {
+                asWebviewUri: (uri: vscode.Uri) => uri,
+                postMessage: (message: any) => commandCenterMessages.push(message),
+                onDidReceiveMessage: () => disposable,
+            };
+            const commandCenter = new LabwiredCommandCenterProvider(vscode.Uri.file(folderA.root), true);
+            commandCenter.resolveWebviewView({ webview, onDidDispose: () => disposable } as any, {} as any, {} as any);
+
+            const topologyPanel: any = {
+                webview: {
+                    asWebviewUri: (uri: vscode.Uri) => uri,
+                    postMessage: (message: any) => topologyMessages.push(message),
+                },
+                onDidDispose: () => disposable,
+                dispose: () => undefined,
+            };
+            new (SystemTopologyPanel as any)(topologyPanel, vscode.Uri.file(folderA.root));
+            await new Promise((resolve) => setTimeout(resolve, 0));
+
+            const initialCommandCenterBoards = commandCenterMessages.filter((message) => message.type === 'boardUpdate');
+            const initialTopologyBoards = topologyMessages.filter((message) => message.type === 'update');
+            const initialCommandCenterBoard = initialCommandCenterBoards[initialCommandCenterBoards.length - 1]?.data;
+            const initialTopologyBoard = initialTopologyBoards[initialTopologyBoards.length - 1]?.data;
+            assert.strictEqual(initialCommandCenterBoard?.name, 'First Editor Model');
+            assert.strictEqual(initialTopologyBoard?.name, 'First Editor Model');
+            assert.strictEqual(editorChangeListeners.length, 2);
+
+            currentEditor = folderB.editor;
+            await Promise.all(editorChangeListeners.map((listener) => listener(folderB.editor)));
+
+            const updatedCommandCenterBoards = commandCenterMessages.filter((message) => message.type === 'boardUpdate');
+            const updatedTopologyBoards = topologyMessages.filter((message) => message.type === 'update');
+            const updatedCommandCenterBoard = updatedCommandCenterBoards[updatedCommandCenterBoards.length - 1]?.data;
+            const updatedTopologyBoard = updatedTopologyBoards[updatedTopologyBoards.length - 1]?.data;
+            assert.strictEqual(updatedCommandCenterBoard?.name, 'Second Editor Model');
+            assert.strictEqual(updatedTopologyBoard?.name, 'Second Editor Model');
+        } finally {
+            if (originalFolders) Object.defineProperty(workspaceApi, 'workspaceFolders', originalFolders);
+            else delete workspaceApi.workspaceFolders;
+            if (originalCreateWatcher) Object.defineProperty(workspaceApi, 'createFileSystemWatcher', originalCreateWatcher);
+            else delete workspaceApi.createFileSystemWatcher;
+            if (originalSession) Object.defineProperty(debugApi, 'activeDebugSession', originalSession);
+            else delete debugApi.activeDebugSession;
+            if (originalSessionChange) Object.defineProperty(debugApi, 'onDidChangeActiveDebugSession', originalSessionChange);
+            else delete debugApi.onDidChangeActiveDebugSession;
+            if (originalEditor) Object.defineProperty(windowApi, 'activeTextEditor', originalEditor);
+            else delete windowApi.activeTextEditor;
+            if (originalEditorChange) Object.defineProperty(windowApi, 'onDidChangeActiveTextEditor', originalEditorChange);
+            else delete windowApi.onDidChangeActiveTextEditor;
+            fs.rmSync(folderA.root, { recursive: true, force: true });
+            fs.rmSync(folderB.root, { recursive: true, force: true });
         }
     });
 });

@@ -14,7 +14,6 @@ function resolveCurrentModelWorkspaceFolder(target) {
 }
 exports.resolveCurrentModelWorkspaceFolder = resolveCurrentModelWorkspaceFolder;
 function resolveWorkspaceFolder(target, preferCurrentEditor) {
-    var _a;
     const folders = vscode.workspace.workspaceFolders || [];
     const explicitPath = targetPath(target);
     if (explicitPath) {
@@ -32,19 +31,26 @@ function resolveWorkspaceFolder(target, preferCurrentEditor) {
     }
     const activeEditor = vscode.window.activeTextEditor;
     if (preferCurrentEditor && activeEditor) {
-        const editorFolder = vscode.workspace.getWorkspaceFolder(activeEditor.document.uri);
+        const editorFolder = workspaceForEditor(folders, activeEditor.document.uri);
         if (editorFolder)
             return editorFolder;
     }
-    const activeSessionFolder = (_a = vscode.debug.activeDebugSession) === null || _a === void 0 ? void 0 : _a.workspaceFolder;
+    const activeSession = vscode.debug.activeDebugSession;
+    const activeSessionFolder = (activeSession === null || activeSession === void 0 ? void 0 : activeSession.type) === 'labwired'
+        ? activeSession.workspaceFolder
+        : undefined;
     if (activeSessionFolder)
         return activeSessionFolder;
     if (!preferCurrentEditor && activeEditor) {
-        const editorFolder = vscode.workspace.getWorkspaceFolder(activeEditor.document.uri);
+        const editorFolder = workspaceForEditor(folders, activeEditor.document.uri);
         if (editorFolder)
             return editorFolder;
     }
     return folders[0];
+}
+function workspaceForEditor(folders, editorUri) {
+    return containingWorkspace(folders, editorUri.fsPath)
+        || vscode.workspace.getWorkspaceFolder(editorUri);
 }
 function targetPath(target) {
     if (typeof target === 'string')
