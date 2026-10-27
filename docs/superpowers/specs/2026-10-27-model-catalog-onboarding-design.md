@@ -40,6 +40,16 @@ project's `.labwired/lab.yaml` so F5 and the Run command use the same model.
    The existing optional custom DAP settings remain available. A user who
    already has a profile can press F5 without opening the wizard.
 
+## Optional project-linked test runner
+
+Projects whose model is available only through a plugin-linked core build can
+set a top-level `runner.executable` in `.labwired/lab.yaml`. Its path is
+resolved relative to that file, with an existing `.exe` selected on Windows
+when the configured path has no extension. **Run Test** prefers this runner
+when set and otherwise uses the stock LabWired CLI. The extension removes both
+extension-only top-level keys (`debug` and `runner`) from the temporary script
+copy passed to core, preserving all other script text and relative paths.
+
 ## Catalog source and updates
 
 `labwired-core` already has a local `Catalog` that reads

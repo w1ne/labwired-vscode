@@ -20,14 +20,16 @@ const fs = require("fs");
 const http = require("http");
 const https = require("https");
 const path = require("path");
+const promises_1 = require("stream/promises");
 const yaml = require("js-yaml");
+const zlib_1 = require("zlib");
 const DEFAULT_CATALOG_URL = 'https://raw.githubusercontent.com/w1ne/labwired-core/model-catalog';
 const COMMIT_PATTERN = /^[a-f0-9]{40}$/i;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/i;
 const CHIP_NAME_PATTERN = /^[a-z0-9][a-z0-9._-]*$/i;
 const MAX_REDIRECTS = 5;
-function getTar() {
-    return require('tar');
+function getTarStream() {
+    return require('tar-stream');
 }
 function validateManifest(value) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -159,7 +161,7 @@ function readManifest(baseUrl, progress, token) {
     });
 }
 function safeArchivePath(rawPath) {
-    if (!rawPath || rawPath.includes('\0') || rawPath.includes('\\')
+    if (!rawPath || rawPath.includes('\0') || rawPath.includes('\\') || rawPath.includes(':')
         || path.posix.isAbsolute(rawPath) || path.win32.isAbsolute(rawPath))
         return undefined;
     const normalizedSlashes = rawPath.endsWith('/') ? rawPath.slice(0, -1) : rawPath;
@@ -170,24 +172,105 @@ function safeArchivePath(rawPath) {
         return undefined;
     return normalizedSlashes;
 }
-function inspectArchive(archivePath) {
+function drainEntry(entry) {
     return __awaiter(this, void 0, void 0, function* () {
-        const entries = [];
-        yield getTar().list({
-            file: archivePath,
-            strict: true,
-            onentry: (entry) => entries.push({ path: entry.path, type: entry.type }),
+        yield new Promise((resolve, reject) => {
+            entry.on('error', reject);
+            entry.on('end', resolve);
+            entry.resume();
         });
-        if (entries.length === 0)
-            throw new Error('The LabWired catalog archive is empty.');
-        for (const entry of entries) {
-            const safePath = safeArchivePath(entry.path);
-            if (!safePath)
-                throw new Error(`The LabWired catalog archive contains an unsafe path '${entry.path}'.`);
-            if (entry.type !== 'File' && entry.type !== 'Directory') {
-                throw new Error(`The LabWired catalog archive contains an unsafe link or entry '${entry.path}'.`);
+    });
+}
+function extractArchiveSafely(archivePath, stagingPath, token) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const source = fs.createReadStream(archivePath);
+        const gunzip = (0, zlib_1.createGunzip)();
+        const extractor = getTarStream().extract();
+        const stagingRoot = path.resolve(stagingPath);
+        let settled = false;
+        let cancellation;
+        let pendingEntryWork;
+        let failure;
+        yield new Promise((resolve, reject) => {
+            const finish = () => {
+                if (settled || failure)
+                    return;
+                settled = true;
+                cancellation === null || cancellation === void 0 ? void 0 : cancellation.dispose();
+                resolve();
+            };
+            const settleFailure = () => {
+                if (settled || !failure)
+                    return;
+                settled = true;
+                cancellation === null || cancellation === void 0 ? void 0 : cancellation.dispose();
+                reject(failure);
+            };
+            const fail = (error) => {
+                if (settled || failure)
+                    return;
+                failure = error;
+                source.destroy();
+                gunzip.destroy();
+                extractor.destroy();
+                if (pendingEntryWork)
+                    pendingEntryWork.then(settleFailure, settleFailure);
+                else
+                    settleFailure();
+            };
+            cancellation = token.onCancellationRequested(() => fail(new Error('LabWired catalog installation cancelled.')));
+            if (token.isCancellationRequested) {
+                fail(new Error('LabWired catalog installation cancelled.'));
+                return;
             }
-        }
+            source.on('error', fail);
+            gunzip.on('error', fail);
+            extractor.on('error', fail);
+            extractor.on('finish', finish);
+            extractor.on('entry', (header, entry, next) => {
+                const writeEntry = () => __awaiter(this, void 0, void 0, function* () {
+                    assertNotCancelled(token);
+                    const safePath = safeArchivePath(header.name);
+                    if (!safePath) {
+                        throw new Error(`The LabWired catalog archive contains an unsafe path '${header.name}'.`);
+                    }
+                    if (header.type !== 'file' && header.type !== 'directory') {
+                        throw new Error(`The LabWired catalog archive contains an unsafe link or entry '${header.name}'.`);
+                    }
+                    if (!Number.isSafeInteger(header.size) || header.size < 0) {
+                        throw new Error(`The LabWired catalog archive contains an invalid entry size for '${header.name}'.`);
+                    }
+                    if (header.type === 'directory' && header.size !== 0) {
+                        throw new Error(`The LabWired catalog archive directory '${header.name}' contains file data.`);
+                    }
+                    const destination = path.resolve(stagingRoot, ...safePath.split('/'));
+                    if (!destination.startsWith(`${stagingRoot}${path.sep}`)) {
+                        throw new Error(`The LabWired catalog archive path '${header.name}' escapes its staging directory.`);
+                    }
+                    if (header.type === 'directory') {
+                        yield fs.promises.mkdir(destination, { recursive: true, mode: 0o755 });
+                        yield drainEntry(entry);
+                    }
+                    else {
+                        yield fs.promises.mkdir(path.dirname(destination), { recursive: true, mode: 0o755 });
+                        yield (0, promises_1.pipeline)(entry, fs.createWriteStream(destination, { flags: 'wx', mode: 0o644 }));
+                    }
+                });
+                pendingEntryWork = writeEntry();
+                pendingEntryWork.then(() => {
+                    pendingEntryWork = undefined;
+                    if (failure) {
+                        settleFailure();
+                        return;
+                    }
+                    next();
+                }, (error) => {
+                    pendingEntryWork = undefined;
+                    fail(error);
+                });
+            });
+            source.pipe(gunzip).pipe(extractor);
+        });
     });
 }
 function isDirectoryWithoutFollowingLinks(directory) {
@@ -255,17 +338,9 @@ function installCatalog(rootPath, progress, token, baseUrl = DEFAULT_CATALOG_URL
             if (checksum !== manifest.sha256)
                 throw new Error('The LabWired catalog archive SHA-256 checksum does not match its manifest.');
             yield fs.promises.writeFile(archivePath, archive, { flag: 'wx' });
-            progress.report({ message: 'Checking catalog archive paths…' });
-            yield inspectArchive(archivePath);
-            assertNotCancelled(token);
-            yield fs.promises.mkdir(tempPath, { recursive: false });
+            yield fs.promises.mkdir(tempPath, { recursive: false, mode: 0o700 });
             progress.report({ message: 'Extracting public model configs…' });
-            yield getTar().extract({
-                file: archivePath,
-                cwd: tempPath,
-                strict: true,
-                filter: (entryPath) => safeArchivePath(entryPath) !== undefined,
-            });
+            yield extractArchiveSafely(archivePath, tempPath, token);
             assertNotCancelled(token);
             const stagedConfigs = path.join(tempPath, 'configs');
             yield assertCatalogTree(stagedConfigs, manifest.chips);

@@ -354,8 +354,8 @@
         "@vscode/vsce": "^3.2.0"
     },
     "dependencies": {
-        "js-yaml": "^4.3.0",
-        "tar": "^6.2.1"
+        "js-yaml": "^4.3.2",
+        "tar-stream": "^2.2.0"
     },
     "icon": "media/icon.png",
     "keywords": [

@@ -102,6 +102,18 @@ assertions:
 stores both paths relative to `.labwired/lab.yaml`. The topology and device
 views use the same model YAML as F5.
 
+If the selected model is only available through a project-linked core build,
+set an optional `runner.executable` path in `.labwired/lab.yaml`:
+
+```yaml
+runner:
+  executable: ../target/release/labwired-pro
+```
+
+The path is relative to `lab.yaml`; on Windows, an existing `.exe` is selected
+when the configured path has no extension. **Run Test** uses this executable
+instead of the stock CLI. Omitting `runner` keeps the standard CLI behavior.
+
 Models that need a custom DAP can configure its executable and build command in
 the same profile. The build runs before every F5 launch, with arguments passed
 as an array (without a shell):

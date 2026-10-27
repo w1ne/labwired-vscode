@@ -6,19 +6,30 @@
 
 import * as path from 'path';
 import * as fs from 'fs';
+import * as crypto from 'crypto';
 import * as yaml from 'js-yaml';
 
 export const LAB_CONFIG_REL = path.join('.labwired', 'lab.yaml');
+
+const LAB_PROFILE_SCHEMA = yaml.DEFAULT_SCHEMA.extend([
+    new yaml.Type('!after_cycles', { kind: 'mapping', construct: (value: unknown) => value }),
+    new yaml.Type('!at_start', { kind: 'scalar', construct: (value: unknown) => value }),
+]);
 
 export interface LabDebugAdapter {
     executable: string;
     build?: { command: string; args: string[]; cwd?: string };
 }
 
+export interface LabRunner {
+    executable: string;
+}
+
 export interface LabConfig {
     schema_version: string;
     inputs: { firmware?: string; system?: string };
     debug?: { adapter?: LabDebugAdapter };
+    runner?: LabRunner;
     limits?: { max_steps?: number };
     assertions?: any[];
 }
@@ -31,7 +42,7 @@ export function findLabConfig(root: string): string | undefined {
 
 export function readLabConfig(file: string): LabConfig {
     const raw = fs.readFileSync(file, 'utf8');
-    const parsed = yaml.load(raw);
+    const parsed = yaml.load(raw, { schema: LAB_PROFILE_SCHEMA });
     if (!isRecord(parsed)) {
         throw new Error('lab.yaml must contain a YAML mapping.');
     }
@@ -51,7 +62,11 @@ export function readLabConfig(file: string): LabConfig {
     if (config.debug !== undefined && !isRecord(config.debug)) {
         throw new Error('lab.yaml debug must be a mapping.');
     }
+    if (config.runner !== undefined && !isRecord(config.runner)) {
+        throw new Error('lab.yaml runner must be a mapping.');
+    }
     const debug = config.debug as Record<string, unknown> | undefined;
+    const runner = config.runner as Record<string, unknown> | undefined;
     if (debug?.adapter !== undefined && !isRecord(debug.adapter)) {
         throw new Error('lab.yaml debug.adapter must be a mapping.');
     }
@@ -93,6 +108,15 @@ export function readLabConfig(file: string): LabConfig {
         };
     }
 
+    let resolvedRunner: LabRunner | undefined;
+    if (runner) {
+        const executable = runner.executable;
+        if (typeof executable !== 'string' || executable.trim().length === 0) {
+            throw new Error('lab.yaml runner.executable must be a non-empty path string.');
+        }
+        resolvedRunner = { executable: resolveProfileExecutablePath(file, executable) };
+    }
+
     return {
         ...(config as unknown as LabConfig),
         inputs: {
@@ -100,7 +124,46 @@ export function readLabConfig(file: string): LabConfig {
             ...(typeof inputs.system === 'string' ? { system: resolveProfilePath(file, inputs.system) } : {}),
         },
         ...(debug ? { debug: { ...(resolvedAdapter ? { adapter: resolvedAdapter } : {}) } } : {}),
+        ...(runner ? { runner: resolvedRunner } : {}),
     };
+}
+
+/** Create a disposable core TestScript copy without extension-only debugger settings. */
+export async function createCoreCompatibleTestScript(labConfigPath: string): Promise<string> {
+    const raw = await fs.promises.readFile(labConfigPath, 'utf8');
+    const coreScript = removeTopLevelYamlEntries(raw, ['debug', 'runner']);
+    const parent = path.dirname(labConfigPath);
+    const tempPath = path.join(
+        parent,
+        `.labwired-test-${process.pid}-${crypto.randomBytes(12).toString('hex')}.yaml`
+    );
+    await fs.promises.writeFile(tempPath, coreScript, { flag: 'wx', mode: 0o600 });
+    return tempPath;
+}
+
+function removeTopLevelYamlEntries(source: string, keys: string[]): string {
+    const keysPattern = keys.map((key) => `(?:${key}|'${key}'|"${key}")`).join('|');
+    const keyLine = new RegExp(`^(?:\\uFEFF)?(?:${keysPattern})\\s*:`);
+    const lines = source.split('\n');
+    const output: string[] = [];
+    let skippingEntry = false;
+
+    for (const line of lines) {
+        if (skippingEntry) {
+            if (line.trim().length === 0) continue;
+            const indentation = line.match(/^[ \t]*/)?.[0].length ?? 0;
+            if (indentation > 0) continue;
+            skippingEntry = false;
+        }
+
+        if (keyLine.test(line)) {
+            skippingEntry = true;
+            continue;
+        }
+        output.push(line);
+    }
+
+    return output.join('\n');
 }
 
 /** The active debug session wins; otherwise use the system selected in lab.yaml. */
@@ -118,6 +181,18 @@ export function resolveSystemConfigPath(root: string, activeDebugPath?: unknown)
 
 function isRecord(value: unknown): value is Record<string, unknown> {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+export function resolveProfileExecutablePath(
+    configFile: string,
+    value: string,
+    platform = process.platform
+): string {
+    const resolvedPath = resolveProfilePath(configFile, value);
+    if (platform === 'win32' && path.extname(resolvedPath).length === 0 && fs.existsSync(`${resolvedPath}.exe`)) {
+        return `${resolvedPath}.exe`;
+    }
+    return resolvedPath;
 }
 
 function resolveProfilePath(configFile: string, value: string): string {

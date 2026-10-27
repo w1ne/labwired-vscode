@@ -26,6 +26,7 @@ interface TarEntry {
     content?: string;
     type?: string;
     linkName?: string;
+    size?: number;
 }
 
 function octal(value: number, width: number): Buffer {
@@ -41,7 +42,7 @@ function makeTar(entries: TarEntry[]): Buffer {
         octal(0o644, 8).copy(header, 100);
         octal(0, 8).copy(header, 108);
         octal(0, 8).copy(header, 116);
-        octal(entry.type === '5' ? 0 : content.length, 12).copy(header, 124);
+        octal(entry.size ?? (entry.type === '5' ? 0 : content.length), 12).copy(header, 124);
         octal(0, 12).copy(header, 136);
         header.fill(0x20, 148, 156);
         header.write(entry.type || '0', 156, 1, 'ascii');
@@ -213,6 +214,24 @@ describe('model catalog installer', function () {
         }
     });
 
+    it('rejects colon-bearing paths before extraction for cross-platform safety', async () => {
+        const archive = makeTar([
+            { name: 'configs/chips/alpha.yaml', content: 'name: alpha\n' },
+            { name: 'configs/chips/alpha.yaml:payload', content: 'not a portable file\n' },
+        ]);
+        const server = await startCatalogServer({ archive });
+        try {
+            const root = makeRoot();
+            await assert.rejects(
+                catalogModule.installCatalog(root, noProgress, activeToken, server.baseUrl),
+                /unsafe|path/i
+            );
+            assert.deepStrictEqual(fs.readdirSync(path.join(root, '.labwired', 'models')), []);
+        } finally {
+            await server.close();
+        }
+    });
+
     it('rejects links in the archive', async () => {
         const archive = makeTar([
             { name: 'configs/chips/alpha.yaml', content: 'name: alpha\n' },
@@ -225,6 +244,24 @@ describe('model catalog installer', function () {
                 catalogModule.installCatalog(root, noProgress, activeToken, server.baseUrl),
                 /link|unsafe|entry/i
             );
+        } finally {
+            await server.close();
+        }
+    });
+
+    it('rejects directory entries that carry file payload data', async () => {
+        const archive = makeTar([
+            { name: 'configs', type: '5', content: 'unexpected payload', size: 18 },
+            { name: 'configs/chips/alpha.yaml', content: 'name: alpha\n' },
+        ]);
+        const server = await startCatalogServer({ archive });
+        try {
+            const root = makeRoot();
+            await assert.rejects(
+                catalogModule.installCatalog(root, noProgress, activeToken, server.baseUrl),
+                /directory|unsafe|entry/i
+            );
+            assert.deepStrictEqual(fs.readdirSync(path.join(root, '.labwired', 'models')), []);
         } finally {
             await server.close();
         }

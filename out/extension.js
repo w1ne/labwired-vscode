@@ -655,7 +655,7 @@ function activateInner(context) {
     context.subscriptions.push(dashboardBtn);
 }
 function compileAndRun(context, outputChannel, simulatorManager) {
-    var _a;
+    var _a, _b;
     return __awaiter(this, void 0, void 0, function* () {
         const workspaceFolder = (0, workspaceSelection_1.resolveCurrentModelWorkspaceFolder)();
         if (!workspaceFolder) {
@@ -718,33 +718,43 @@ function compileAndRun(context, outputChannel, simulatorManager) {
         // The freshly built binary is whatever lab.yaml names as inputs.firmware.
         // Pass it explicitly as --firmware so a rebuild is always what runs.
         let firmware;
-        try {
-            const lab = (0, labConfig_1.readLabConfig)(labConfigPath);
-            if ((_a = lab.inputs) === null || _a === void 0 ? void 0 : _a.firmware) {
-                firmware = path.resolve(labDir, lab.inputs.firmware);
-            }
+        const lab = (0, labConfig_1.readLabConfig)(labConfigPath);
+        if ((_a = lab.inputs) === null || _a === void 0 ? void 0 : _a.firmware) {
+            firmware = lab.inputs.firmware;
         }
-        catch (e) {
-            outputChannel.appendLine(`LabWired: Failed to read lab.yaml: ${e}`);
-        }
-        // 4. Run the SAME command CI runs: labwired test --script <lab.yaml> ...
+        const runnerExecutable = (_b = lab.runner) === null || _b === void 0 ? void 0 : _b.executable;
+        // 4. Run the core TestScript from a temporary copy without extension-only debug settings.
         let cli;
-        try {
-            cli = yield (0, cli_1.resolveCli)(context, outputChannel);
+        if (runnerExecutable) {
+            try {
+                if (!fs.statSync(runnerExecutable).isFile())
+                    throw new Error('not a file');
+            }
+            catch (_c) {
+                throw new Error(`LabWired: Configured runner executable '${runnerExecutable}' is missing. Check runner.executable in .labwired/lab.yaml.`);
+            }
+            cli = runnerExecutable;
         }
-        catch (e) {
-            (0, crashReport_1.reportCrash)(e, {
-                stage: 'download',
-                binarySource: (0, crashFingerprint_1.binarySourceOf)(cli_1.CLI_BIN),
-                extensionVersion: extensionVersion(context),
-            });
-            throw e;
+        else {
+            try {
+                cli = yield (0, cli_1.resolveCli)(context, outputChannel);
+            }
+            catch (e) {
+                (0, crashReport_1.reportCrash)(e, {
+                    stage: 'download',
+                    binarySource: (0, crashFingerprint_1.binarySourceOf)(cli_1.CLI_BIN),
+                    extensionVersion: extensionVersion(context),
+                });
+                throw e;
+            }
         }
         let exitCode;
         let result;
+        let coreTestScriptPath;
         try {
+            coreTestScriptPath = yield (0, labConfig_1.createCoreCompatibleTestScript)(labConfigPath);
             ({ exitCode, result } = yield (0, cli_1.runTest)(cli, {
-                script: labConfigPath,
+                script: coreTestScriptPath,
                 cwd: rootPath,
                 outputDir,
                 firmware,
@@ -760,6 +770,16 @@ function compileAndRun(context, outputChannel, simulatorManager) {
                 extensionVersion: extensionVersion(context),
             });
             throw e;
+        }
+        finally {
+            if (coreTestScriptPath) {
+                try {
+                    yield fs.promises.rm(coreTestScriptPath, { force: true });
+                }
+                catch (error) {
+                    outputChannel.appendLine(`LabWired: Failed to remove temporary test script: ${error}`);
+                }
+            }
         }
         outputChannel.show();
         const status = result === null || result === void 0 ? void 0 : result.status;

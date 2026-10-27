@@ -23,7 +23,7 @@ import { showModelConfigWizard } from './configWizard';
 import { resolveCli, resolveDap, runTest, CLI_BIN, DAP_BIN } from './cli';
 import { binarySourceOf } from './crashFingerprint';
 import { reportCrash } from './crashReport';
-import { findLabConfig, readLabConfig, migrateLabConfig, resolveSystemConfigPath, LabDebugAdapter } from './labConfig';
+import { findLabConfig, readLabConfig, migrateLabConfig, resolveSystemConfigPath, LabDebugAdapter, createCoreCompatibleTestScript } from './labConfig';
 import { bestFirmware } from './firmware';
 import { RegistersPanel } from './registersPanel';
 import { LabwiredAuthProvider, AUTH_ID, AUTH_LABEL, SCOPES } from './auth';
@@ -822,32 +822,40 @@ async function compileAndRun(context: vscode.ExtensionContext, outputChannel: vs
     // The freshly built binary is whatever lab.yaml names as inputs.firmware.
     // Pass it explicitly as --firmware so a rebuild is always what runs.
     let firmware: string | undefined;
-    try {
-        const lab = readLabConfig(labConfigPath);
-        if (lab.inputs?.firmware) {
-            firmware = path.resolve(labDir, lab.inputs.firmware);
-        }
-    } catch (e) {
-        outputChannel.appendLine(`LabWired: Failed to read lab.yaml: ${e}`);
+    const lab = readLabConfig(labConfigPath);
+    if (lab.inputs?.firmware) {
+        firmware = lab.inputs.firmware;
     }
+    const runnerExecutable = lab.runner?.executable;
 
-    // 4. Run the SAME command CI runs: labwired test --script <lab.yaml> ...
+    // 4. Run the core TestScript from a temporary copy without extension-only debug settings.
     let cli: string;
-    try {
-        cli = await resolveCli(context, outputChannel);
-    } catch (e) {
-        reportCrash(e, {
-            stage: 'download',
-            binarySource: binarySourceOf(CLI_BIN),
-            extensionVersion: extensionVersion(context),
-        });
-        throw e;
+    if (runnerExecutable) {
+        try {
+            if (!fs.statSync(runnerExecutable).isFile()) throw new Error('not a file');
+        } catch {
+            throw new Error(`LabWired: Configured runner executable '${runnerExecutable}' is missing. Check runner.executable in .labwired/lab.yaml.`);
+        }
+        cli = runnerExecutable;
+    } else {
+        try {
+            cli = await resolveCli(context, outputChannel);
+        } catch (e) {
+            reportCrash(e, {
+                stage: 'download',
+                binarySource: binarySourceOf(CLI_BIN),
+                extensionVersion: extensionVersion(context),
+            });
+            throw e;
+        }
     }
     let exitCode: number;
     let result: Awaited<ReturnType<typeof runTest>>['result'];
+    let coreTestScriptPath: string | undefined;
     try {
+        coreTestScriptPath = await createCoreCompatibleTestScript(labConfigPath);
         ({ exitCode, result } = await runTest(cli, {
-            script: labConfigPath,
+            script: coreTestScriptPath,
             cwd: rootPath,
             outputDir,
             firmware,
@@ -862,6 +870,14 @@ async function compileAndRun(context: vscode.ExtensionContext, outputChannel: vs
             extensionVersion: extensionVersion(context),
         });
         throw e;
+    } finally {
+        if (coreTestScriptPath) {
+            try {
+                await fs.promises.rm(coreTestScriptPath, { force: true });
+            } catch (error) {
+                outputChannel.appendLine(`LabWired: Failed to remove temporary test script: ${error}`);
+            }
+        }
     }
 
     outputChannel.show();
