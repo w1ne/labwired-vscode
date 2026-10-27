@@ -14,6 +14,7 @@ const vscode = require("vscode");
 const path = require("path");
 const fs = require("fs");
 const labConfig_1 = require("./labConfig");
+const workspaceSelection_1 = require("./workspaceSelection");
 class SystemTopologyPanel {
     static createOrShow(extensionUri) {
         const column = vscode.window.activeTextEditor
@@ -30,7 +31,6 @@ class SystemTopologyPanel {
         SystemTopologyPanel.currentPanel = new SystemTopologyPanel(panel, extensionUri);
     }
     constructor(panel, extensionUri) {
-        var _a;
         this._disposables = [];
         this._panel = panel;
         this._extensionUri = extensionUri;
@@ -40,8 +40,7 @@ class SystemTopologyPanel {
             vscode.workspace.createFileSystemWatcher('**/*.yaml'),
             vscode.workspace.createFileSystemWatcher('**/*.yml'),
         ];
-        const profileFolder = (_a = vscode.workspace.workspaceFolders) === null || _a === void 0 ? void 0 : _a[0];
-        if (profileFolder) {
+        for (const profileFolder of vscode.workspace.workspaceFolders || []) {
             watchers.push(vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(profileFolder, '.labwired/lab.yaml')));
         }
         for (const watcher of watchers) {
@@ -77,15 +76,15 @@ class SystemTopologyPanel {
     _getBoardData() {
         var _a;
         return __awaiter(this, void 0, void 0, function* () {
-            const workspaces = vscode.workspace.workspaceFolders;
-            if (!workspaces)
+            const profileFolder = (0, workspaceSelection_1.resolveModelWorkspaceFolder)();
+            if (!profileFolder)
                 return null;
             try {
                 const session = vscode.debug.activeDebugSession;
                 const activeSystemConfig = (session === null || session === void 0 ? void 0 : session.type) === 'labwired'
                     ? (_a = session.configuration) === null || _a === void 0 ? void 0 : _a.systemConfig
                     : undefined;
-                const systemConfigPath = (0, labConfig_1.resolveSystemConfigPath)(workspaces[0].uri.fsPath, activeSystemConfig);
+                const systemConfigPath = (0, labConfig_1.resolveSystemConfigPath)(profileFolder.uri.fsPath, activeSystemConfig);
                 if (!systemConfigPath || !fs.existsSync(systemConfigPath))
                     return null;
                 const content = fs.readFileSync(systemConfigPath, 'utf8');

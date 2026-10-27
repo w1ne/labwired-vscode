@@ -71,6 +71,54 @@ suite('model profile configuration wizard', function () {
             vscode.window.showWarningMessage = originalWarning;
         }
     }));
+    test('configures the workspace folder passed to the command', () => __awaiter(this, void 0, void 0, function* () {
+        const primaryConfig = path.join(root, '.labwired', 'lab.yaml');
+        fs.mkdirSync(path.dirname(primaryConfig), { recursive: true });
+        fs.writeFileSync(primaryConfig, 'keep: primary\n');
+        const targetRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'lw-model-wizard-target-'));
+        const targetSystem = path.join(targetRoot, 'config', 'target-system.yaml');
+        const targetFirmware = path.join(targetRoot, 'build', 'target.elf');
+        fs.mkdirSync(path.dirname(targetSystem), { recursive: true });
+        fs.mkdirSync(path.dirname(targetFirmware), { recursive: true });
+        fs.writeFileSync(targetSystem, 'name: Target Workspace\n');
+        fs.writeFileSync(targetFirmware, 'firmware');
+        const targetFolder = {
+            uri: vscode.Uri.file(targetRoot), name: 'target-workspace', index: 1,
+        };
+        const workspaceApi = vscode.workspace;
+        const originalFolders = Object.getOwnPropertyDescriptor(workspaceApi, 'workspaceFolders');
+        const originalOpenDialog = vscode.window.showOpenDialog;
+        const originalQuickPick = vscode.window.showQuickPick;
+        const originalInformation = vscode.window.showInformationMessage;
+        const originalWarning = vscode.window.showWarningMessage;
+        try {
+            Object.defineProperty(workspaceApi, 'workspaceFolders', {
+                configurable: true,
+                value: [
+                    { uri: vscode.Uri.file(root), name: 'primary-workspace', index: 0 },
+                    targetFolder,
+                ],
+            });
+            vscode.window.showOpenDialog = (options) => __awaiter(this, void 0, void 0, function* () { var _b; return ((_b = options.filters) === null || _b === void 0 ? void 0 : _b['System YAML']) ? [vscode.Uri.file(targetSystem)] : [vscode.Uri.file(targetFirmware)]; });
+            vscode.window.showQuickPick = () => __awaiter(this, void 0, void 0, function* () { return 'Use standard LabWired DAP'; });
+            vscode.window.showInformationMessage = () => __awaiter(this, void 0, void 0, function* () { return undefined; });
+            vscode.window.showWarningMessage = () => __awaiter(this, void 0, void 0, function* () { return 'Replace Profile'; });
+            yield vscode.commands.executeCommand('labwired.configureModel', targetFolder);
+            const saved = fs.readFileSync(path.join(targetRoot, '.labwired', 'lab.yaml'), 'utf8');
+            assert.ok(saved.includes('system: ../config/target-system.yaml'));
+            assert.ok(saved.includes('firmware: ../build/target.elf'));
+            assert.strictEqual(fs.readFileSync(primaryConfig, 'utf8'), 'keep: primary\n');
+        }
+        finally {
+            if (originalFolders)
+                Object.defineProperty(workspaceApi, 'workspaceFolders', originalFolders);
+            vscode.window.showOpenDialog = originalOpenDialog;
+            vscode.window.showQuickPick = originalQuickPick;
+            vscode.window.showInformationMessage = originalInformation;
+            vscode.window.showWarningMessage = originalWarning;
+            fs.rmSync(targetRoot, { recursive: true, force: true });
+        }
+    }));
     test('keeps an existing model profile unchanged when overwrite is cancelled', () => __awaiter(this, void 0, void 0, function* () {
         const configPath = path.join(root, '.labwired', 'lab.yaml');
         fs.mkdirSync(path.dirname(configPath), { recursive: true });
@@ -103,14 +151,19 @@ suite('model profile configuration wizard', function () {
         fs.writeFileSync(configPath, originalBytes);
         const originalWarning = vscode.window.showWarningMessage;
         const originalOpenDialog = vscode.window.showOpenDialog;
+        let pickerCalls = 0;
         try {
-            vscode.window.showWarningMessage = () => __awaiter(this, void 0, void 0, function* () { return 'Overwrite'; });
-            vscode.window.showOpenDialog = () => __awaiter(this, void 0, void 0, function* () { return undefined; });
+            vscode.window.showWarningMessage = () => __awaiter(this, void 0, void 0, function* () { return 'Replace Profile'; });
+            vscode.window.showOpenDialog = () => __awaiter(this, void 0, void 0, function* () {
+                pickerCalls++;
+                return undefined;
+            });
             const extension = vscode.extensions.getExtension('w1ne.labwired-vscode');
             assert.ok(extension);
             yield extension.activate();
             yield vscode.commands.executeCommand('labwired.configureModel');
             assert.strictEqual(fs.readFileSync(configPath, 'utf8'), originalBytes);
+            assert.strictEqual(pickerCalls, 1);
         }
         finally {
             vscode.window.showWarningMessage = originalWarning;
@@ -127,14 +180,14 @@ suite('model profile configuration wizard', function () {
         fs.writeFileSync(customExecutable, 'adapter');
         try {
             vscode.window.showOpenDialog = (options) => __awaiter(this, void 0, void 0, function* () {
-                var _b, _c;
-                if ((_b = options.filters) === null || _b === void 0 ? void 0 : _b['System YAML'])
+                var _c, _d;
+                if ((_c = options.filters) === null || _c === void 0 ? void 0 : _c['System YAML'])
                     return [vscode.Uri.file(systemFile)];
-                if ((_c = options.filters) === null || _c === void 0 ? void 0 : _c['Firmware ELF'])
+                if ((_d = options.filters) === null || _d === void 0 ? void 0 : _d['Firmware ELF'])
                     return [vscode.Uri.file(firmwareFile)];
                 return [vscode.Uri.file(customExecutable)];
             });
-            const quickPicks = ['Configure custom DAP', 'Build before each F5'];
+            const quickPicks = ['Configure custom DAP', 'Select existing executable', 'Build before each F5'];
             vscode.window.showQuickPick = () => __awaiter(this, void 0, void 0, function* () { return quickPicks.shift(); });
             const inputs = ['cargo', '["build", "-p", "custom-dap", "--release"]', '.'];
             vscode.window.showInputBox = () => __awaiter(this, void 0, void 0, function* () { return inputs.shift(); });
@@ -156,6 +209,82 @@ suite('model profile configuration wizard', function () {
             vscode.window.showQuickPick = originalQuickPick;
             vscode.window.showInputBox = originalInputBox;
             vscode.window.showWarningMessage = originalWarning;
+        }
+    }));
+    test('allows a not-yet-built custom DAP path when build-before-F5 is configured', () => __awaiter(this, void 0, void 0, function* () {
+        const originalOpenDialog = vscode.window.showOpenDialog;
+        const originalQuickPick = vscode.window.showQuickPick;
+        const originalInputBox = vscode.window.showInputBox;
+        const originalWarning = vscode.window.showWarningMessage;
+        const customExecutable = path.join(root, 'target', 'release', 'future-custom-dap');
+        fs.rmSync(customExecutable, { force: true });
+        try {
+            vscode.window.showOpenDialog = (options) => __awaiter(this, void 0, void 0, function* () {
+                var _e, _f;
+                return ((_e = options.filters) === null || _e === void 0 ? void 0 : _e['System YAML']) ? [vscode.Uri.file(systemFile)]
+                    : ((_f = options.filters) === null || _f === void 0 ? void 0 : _f['Firmware ELF']) ? [vscode.Uri.file(firmwareFile)]
+                        : undefined;
+            });
+            const picks = ['Configure custom DAP', 'Enter executable path', 'Build before each F5'];
+            vscode.window.showQuickPick = () => __awaiter(this, void 0, void 0, function* () { return picks.shift(); });
+            const inputs = ['target/release/future-custom-dap', 'cargo', '["build", "--release"]', '.'];
+            vscode.window.showInputBox = () => __awaiter(this, void 0, void 0, function* () { return inputs.shift(); });
+            vscode.window.showWarningMessage = () => __awaiter(this, void 0, void 0, function* () { return 'Replace Profile'; });
+            yield vscode.commands.executeCommand('labwired.configureModel');
+            const saved = yaml.load(fs.readFileSync(path.join(root, '.labwired', 'lab.yaml'), 'utf8'));
+            assert.strictEqual(saved.debug.adapter.executable, '../target/release/future-custom-dap');
+            assert.deepStrictEqual(saved.debug.adapter.build, {
+                command: 'cargo', args: ['build', '--release'], cwd: '..',
+            });
+            assert.strictEqual(fs.existsSync(customExecutable), false);
+        }
+        finally {
+            vscode.window.showOpenDialog = originalOpenDialog;
+            vscode.window.showQuickPick = originalQuickPick;
+            vscode.window.showInputBox = originalInputBox;
+            vscode.window.showWarningMessage = originalWarning;
+        }
+    }));
+    test('rejects a missing custom DAP path in prebuilt mode', () => __awaiter(this, void 0, void 0, function* () {
+        const targetRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'lw-prebuilt-config-'));
+        const targetSystem = path.join(targetRoot, 'system.yaml');
+        const targetFirmware = path.join(targetRoot, 'firmware.elf');
+        const missingExecutable = path.join(targetRoot, 'missing-dap');
+        fs.writeFileSync(targetSystem, 'name: Prebuilt Validation\n');
+        fs.writeFileSync(targetFirmware, 'firmware');
+        const folder = { uri: vscode.Uri.file(targetRoot), name: 'prebuilt-validation', index: 0 };
+        const workspaceApi = vscode.workspace;
+        const originalFolders = Object.getOwnPropertyDescriptor(workspaceApi, 'workspaceFolders');
+        const originalOpenDialog = vscode.window.showOpenDialog;
+        const originalQuickPick = vscode.window.showQuickPick;
+        const originalInputBox = vscode.window.showInputBox;
+        const originalError = vscode.window.showErrorMessage;
+        try {
+            Object.defineProperty(workspaceApi, 'workspaceFolders', { configurable: true, value: [folder] });
+            vscode.window.showOpenDialog = (options) => __awaiter(this, void 0, void 0, function* () {
+                var _g, _h;
+                return ((_g = options.filters) === null || _g === void 0 ? void 0 : _g['System YAML']) ? [vscode.Uri.file(targetSystem)]
+                    : ((_h = options.filters) === null || _h === void 0 ? void 0 : _h['Firmware ELF']) ? [vscode.Uri.file(targetFirmware)]
+                        : undefined;
+            });
+            const picks = ['Configure custom DAP', 'Enter executable path', 'Use prebuilt executable'];
+            vscode.window.showQuickPick = () => __awaiter(this, void 0, void 0, function* () { return picks.shift(); });
+            vscode.window.showInputBox = () => __awaiter(this, void 0, void 0, function* () { return 'missing-dap'; });
+            let errorMessage = '';
+            vscode.window.showErrorMessage = (message) => __awaiter(this, void 0, void 0, function* () { errorMessage = message; });
+            yield vscode.commands.executeCommand('labwired.configureModel');
+            assert.match(errorMessage, /prebuilt.*exist|executable.*found/i);
+            assert.strictEqual(fs.existsSync(path.join(targetRoot, '.labwired', 'lab.yaml')), false);
+            assert.strictEqual(fs.existsSync(missingExecutable), false);
+        }
+        finally {
+            if (originalFolders)
+                Object.defineProperty(workspaceApi, 'workspaceFolders', originalFolders);
+            vscode.window.showOpenDialog = originalOpenDialog;
+            vscode.window.showQuickPick = originalQuickPick;
+            vscode.window.showInputBox = originalInputBox;
+            vscode.window.showErrorMessage = originalError;
+            fs.rmSync(targetRoot, { recursive: true, force: true });
         }
     }));
 });

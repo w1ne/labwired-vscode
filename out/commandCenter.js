@@ -14,6 +14,7 @@ const vscode = require("vscode");
 const path = require("path");
 const fs = require("fs");
 const labConfig_1 = require("./labConfig");
+const workspaceSelection_1 = require("./workspaceSelection");
 class LabwiredCommandCenterProvider {
     constructor(_extensionUri, _demoUiEnabled) {
         this._extensionUri = _extensionUri;
@@ -24,7 +25,6 @@ class LabwiredCommandCenterProvider {
         this._pendingUartChunks = [];
     }
     resolveWebviewView(webviewView, context, _token) {
-        var _a;
         this._view = webviewView;
         webviewView.webview.onDidReceiveMessage(data => {
             switch (data.type) {
@@ -35,7 +35,7 @@ class LabwiredCommandCenterProvider {
                     vscode.commands.executeCommand('workbench.action.output.toggleOutput');
                     break;
                 case 'configureProject':
-                    vscode.commands.executeCommand('labwired.configureModel');
+                    vscode.commands.executeCommand('labwired.configureModel', (0, workspaceSelection_1.resolveCurrentModelWorkspaceFolder)());
                     break;
                 case 'ready':
                     this._webviewReady = true;
@@ -57,8 +57,7 @@ class LabwiredCommandCenterProvider {
             vscode.workspace.createFileSystemWatcher('**/*.yaml'),
             vscode.workspace.createFileSystemWatcher('**/*.yml'),
         ];
-        const profileFolder = (_a = vscode.workspace.workspaceFolders) === null || _a === void 0 ? void 0 : _a[0];
-        if (profileFolder) {
+        for (const profileFolder of vscode.workspace.workspaceFolders || []) {
             watchers.push(vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(profileFolder, '.labwired/lab.yaml')));
         }
         for (const watcher of watchers) {
@@ -140,10 +139,10 @@ class LabwiredCommandCenterProvider {
         return __awaiter(this, void 0, void 0, function* () {
             if (!this._view)
                 return;
-            const workspaceFolders = vscode.workspace.workspaceFolders;
-            if (!workspaceFolders)
+            const profileFolder = (0, workspaceSelection_1.resolveModelWorkspaceFolder)();
+            if (!profileFolder)
                 return;
-            const rootPath = workspaceFolders[0].uri.fsPath;
+            const rootPath = profileFolder.uri.fsPath;
             const activeSystemConfig = (() => {
                 var _a;
                 const session = vscode.debug.activeDebugSession;

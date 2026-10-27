@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import { resolveSystemConfigPath } from './labConfig';
+import { resolveModelWorkspaceFolder } from './workspaceSelection';
 
 export class SystemTopologyPanel {
     public static currentPanel: SystemTopologyPanel | undefined;
@@ -44,8 +45,7 @@ export class SystemTopologyPanel {
             vscode.workspace.createFileSystemWatcher('**/*.yaml'),
             vscode.workspace.createFileSystemWatcher('**/*.yml'),
         ];
-        const profileFolder = vscode.workspace.workspaceFolders?.[0];
-        if (profileFolder) {
+        for (const profileFolder of vscode.workspace.workspaceFolders || []) {
             watchers.push(vscode.workspace.createFileSystemWatcher(
                 new vscode.RelativePattern(profileFolder, '.labwired/lab.yaml')
             ));
@@ -83,15 +83,15 @@ export class SystemTopologyPanel {
     }
 
     private async _getBoardData(): Promise<any> {
-        const workspaces = vscode.workspace.workspaceFolders;
-        if (!workspaces) return null;
+        const profileFolder = resolveModelWorkspaceFolder();
+        if (!profileFolder) return null;
 
         try {
             const session = vscode.debug.activeDebugSession;
             const activeSystemConfig = session?.type === 'labwired'
                 ? session.configuration?.systemConfig
                 : undefined;
-            const systemConfigPath = resolveSystemConfigPath(workspaces[0].uri.fsPath, activeSystemConfig);
+            const systemConfigPath = resolveSystemConfigPath(profileFolder.uri.fsPath, activeSystemConfig);
             if (!systemConfigPath || !fs.existsSync(systemConfigPath)) return null;
             const content = fs.readFileSync(systemConfigPath, 'utf8');
             return this._parseYaml(content);

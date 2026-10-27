@@ -2,6 +2,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
 import { resolveSystemConfigPath } from './labConfig';
+import { resolveCurrentModelWorkspaceFolder, resolveModelWorkspaceFolder } from './workspaceSelection';
 
 type ParsedExternalDevice = {
     id: string;
@@ -55,7 +56,7 @@ export class LabwiredCommandCenterProvider implements vscode.WebviewViewProvider
                     vscode.commands.executeCommand('workbench.action.output.toggleOutput');
                     break;
                 case 'configureProject':
-                    vscode.commands.executeCommand('labwired.configureModel');
+                    vscode.commands.executeCommand('labwired.configureModel', resolveCurrentModelWorkspaceFolder());
                     break;
                 case 'ready':
                     this._webviewReady = true;
@@ -80,8 +81,7 @@ export class LabwiredCommandCenterProvider implements vscode.WebviewViewProvider
             vscode.workspace.createFileSystemWatcher('**/*.yaml'),
             vscode.workspace.createFileSystemWatcher('**/*.yml'),
         ];
-        const profileFolder = vscode.workspace.workspaceFolders?.[0];
-        if (profileFolder) {
+        for (const profileFolder of vscode.workspace.workspaceFolders || []) {
             watchers.push(vscode.workspace.createFileSystemWatcher(
                 new vscode.RelativePattern(profileFolder, '.labwired/lab.yaml')
             ));
@@ -179,10 +179,10 @@ export class LabwiredCommandCenterProvider implements vscode.WebviewViewProvider
     public async updateBoard() {
         if (!this._view) return;
 
-        const workspaceFolders = vscode.workspace.workspaceFolders;
-        if (!workspaceFolders) return;
+        const profileFolder = resolveModelWorkspaceFolder();
+        if (!profileFolder) return;
 
-        const rootPath = workspaceFolders[0].uri.fsPath;
+        const rootPath = profileFolder.uri.fsPath;
         const activeSystemConfig = (() => {
             const session = vscode.debug.activeDebugSession;
             if (!session || session.type !== 'labwired') return undefined;

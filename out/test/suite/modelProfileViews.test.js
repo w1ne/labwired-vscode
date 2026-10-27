@@ -85,5 +85,64 @@ suite('model profile views', function () {
         assert.strictEqual(board === null || board === void 0 ? void 0 : board.name, 'Nested K32W041Z Model');
         assert.strictEqual(topologyBoard === null || topologyBoard === void 0 ? void 0 : topologyBoard.name, 'Nested K32W041Z Model');
     }));
+    test('command center and topology follow the active session workspace and resolve relative paths there', () => __awaiter(this, void 0, void 0, function* () {
+        var _b;
+        const secondRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'lw-model-views-session-'));
+        const activeSystem = path.join(secondRoot, 'profiles', 'active-system.yaml');
+        const activeFirmware = path.join(secondRoot, 'target', 'active.elf');
+        fs.mkdirSync(path.dirname(activeSystem), { recursive: true });
+        fs.mkdirSync(path.dirname(activeFirmware), { recursive: true });
+        fs.writeFileSync(activeSystem, 'name: Active Session Workspace\nchip: active-model\n');
+        fs.writeFileSync(activeFirmware, 'firmware');
+        const secondFolder = {
+            uri: vscode.Uri.file(secondRoot), name: 'active-session-workspace', index: 1,
+        };
+        const workspaceApi = vscode.workspace;
+        const originalFolders = Object.getOwnPropertyDescriptor(workspaceApi, 'workspaceFolders');
+        const debugApi = vscode.debug;
+        const originalSession = Object.getOwnPropertyDescriptor(debugApi, 'activeDebugSession');
+        const activeSession = {
+            type: 'labwired',
+            workspaceFolder: secondFolder,
+            configuration: { systemConfig: 'profiles/active-system.yaml' },
+        };
+        try {
+            Object.defineProperty(workspaceApi, 'workspaceFolders', {
+                configurable: true,
+                value: [workspaceFolder, secondFolder],
+            });
+            Object.defineProperty(debugApi, 'activeDebugSession', {
+                configurable: true,
+                get: () => activeSession,
+            });
+            const output = { appendLine: (_line) => undefined };
+            const configurationProvider = new extension_1.LabwiredConfigurationProvider(output, { execSync: (command) => command === 'rustc --print sysroot'
+                    ? '/rust/sysroot'
+                    : 'commit-hash: abcdef123' }, (file) => __awaiter(this, void 0, void 0, function* () { return fs.existsSync(file); }));
+            const f5 = yield configurationProvider.resolveDebugConfiguration(secondFolder, {
+                type: 'labwired', name: 'Active model', request: 'launch',
+                program: activeFirmware, systemConfig: 'profiles/active-system.yaml',
+            });
+            const boardMessages = [];
+            const commandCenter = new commandCenter_1.LabwiredCommandCenterProvider(vscode.Uri.file(secondRoot), true);
+            commandCenter._view = { webview: { postMessage: (message) => boardMessages.push(message) } };
+            yield commandCenter.updateBoard();
+            const topology = Object.create(topologyPanel_1.SystemTopologyPanel.prototype);
+            const topologyBoard = yield topology._getBoardData();
+            const board = (_b = boardMessages.find((message) => message.type === 'boardUpdate')) === null || _b === void 0 ? void 0 : _b.data;
+            assert.strictEqual(f5 === null || f5 === void 0 ? void 0 : f5.systemConfig, activeSystem);
+            assert.strictEqual(board === null || board === void 0 ? void 0 : board.name, 'Active Session Workspace');
+            assert.strictEqual(topologyBoard === null || topologyBoard === void 0 ? void 0 : topologyBoard.name, 'Active Session Workspace');
+        }
+        finally {
+            if (originalFolders)
+                Object.defineProperty(workspaceApi, 'workspaceFolders', originalFolders);
+            if (originalSession)
+                Object.defineProperty(debugApi, 'activeDebugSession', originalSession);
+            else
+                delete debugApi.activeDebugSession;
+            fs.rmSync(secondRoot, { recursive: true, force: true });
+        }
+    }));
 });
 //# sourceMappingURL=modelProfileViews.test.js.map
