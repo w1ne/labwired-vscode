@@ -330,6 +330,9 @@
         }
     },
     "main": "./out/extension.js",
+    "extensionKind": [
+        "workspace"
+    ],
     "scripts": {
         "vscode:prepublish": "npm run compile",
         "compile": "tsc -p ./",
@@ -351,7 +354,8 @@
         "@vscode/vsce": "^3.2.0"
     },
     "dependencies": {
-        "js-yaml": "^4.3.0"
+        "js-yaml": "^4.3.0",
+        "tar": "^7.5.22"
     },
     "icon": "media/icon.png",
     "keywords": [

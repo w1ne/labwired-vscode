@@ -5,6 +5,8 @@ import * as os from 'os';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
 
+const modelCatalogApi = require('../../modelCatalog');
+
 function restoreOwnProperty(target: any, key: string, descriptor: PropertyDescriptor | undefined): void {
     if (descriptor) Object.defineProperty(target, key, descriptor);
     else delete target[key];
@@ -52,7 +54,8 @@ suite('model profile configuration wizard', function () {
         try {
             (vscode.window as any).showOpenDialog = async (options: any) =>
                 options.filters?.['System YAML'] ? [vscode.Uri.file(systemFile)] : [vscode.Uri.file(firmwareFile)];
-            (vscode.window as any).showQuickPick = async () => 'Use standard LabWired DAP';
+            const picks = ['Select local model YAML', 'Use standard LabWired DAP'];
+            (vscode.window as any).showQuickPick = async () => picks.shift();
             (vscode.window as any).showInformationMessage = async () => undefined;
             (vscode.window as any).showWarningMessage = async () => 'Replace Profile';
 
@@ -69,6 +72,109 @@ suite('model profile configuration wizard', function () {
             (vscode.window as any).showQuickPick = originalQuickPick;
             (vscode.window as any).showInformationMessage = originalInformation;
             (vscode.window as any).showWarningMessage = originalWarning;
+        }
+    });
+
+    test('saves a catalog model and separately selected firmware with portable relative paths', async () => {
+        const originalOpenDialog = vscode.window.showOpenDialog;
+        const originalQuickPick = vscode.window.showQuickPick;
+        const originalProgress = vscode.window.withProgress;
+        const originalInformation = vscode.window.showInformationMessage;
+        const originalWarning = vscode.window.showWarningMessage;
+        const originalInstall = modelCatalogApi.installCatalog;
+        const originalFindOrCreate = modelCatalogApi.findOrCreateSystemYaml;
+        const commit = 'b'.repeat(40);
+        const configsPath = path.join(root, '.labwired', 'models', commit, 'configs');
+        const systemPath = path.join(configsPath, 'systems', 'alpha.yaml');
+        fs.mkdirSync(path.dirname(systemPath), { recursive: true });
+        fs.writeFileSync(systemPath, 'chip: ../chips/alpha.yaml\nexternal_devices: []\n');
+        const catalog = {
+            schema_version: 1,
+            core_commit: commit,
+            archive: 'configs.tar.gz',
+            sha256: '0'.repeat(64),
+            chips: ['alpha', 'beta'],
+            configsPath,
+        };
+        try {
+            modelCatalogApi.installCatalog = async (rootPath: string) => {
+                assert.strictEqual(rootPath, root);
+                return catalog;
+            };
+            modelCatalogApi.findOrCreateSystemYaml = async (_catalog: unknown, chip: string) => {
+                assert.strictEqual(chip, 'alpha');
+                return systemPath;
+            };
+            const picks = ['Choose from LabWired catalog', 'alpha', 'Use standard LabWired DAP'];
+            (vscode.window as any).showQuickPick = async () => picks.shift();
+            (vscode.window as any).withProgress = async (_options: unknown, task: Function) => task(
+                { report: () => undefined },
+                { isCancellationRequested: false, onCancellationRequested: () => ({ dispose: () => undefined }) }
+            );
+            (vscode.window as any).showOpenDialog = async (options: any) =>
+                options.filters?.['Firmware ELF'] ? [vscode.Uri.file(firmwareFile)] : undefined;
+            (vscode.window as any).showInformationMessage = async () => undefined;
+            (vscode.window as any).showWarningMessage = async () => 'Replace Profile';
+
+            await vscode.commands.executeCommand('labwired.configureModel');
+
+            const saved = yaml.load(fs.readFileSync(path.join(root, '.labwired', 'lab.yaml'), 'utf8')) as any;
+            assert.strictEqual(saved.inputs.system, `models/${commit}/configs/systems/alpha.yaml`);
+            assert.strictEqual(saved.inputs.firmware, '../target/thumbv7em-none-eabi/debug/demo-m1');
+        } finally {
+            (vscode.window as any).showOpenDialog = originalOpenDialog;
+            (vscode.window as any).showQuickPick = originalQuickPick;
+            (vscode.window as any).withProgress = originalProgress;
+            (vscode.window as any).showInformationMessage = originalInformation;
+            (vscode.window as any).showWarningMessage = originalWarning;
+            modelCatalogApi.installCatalog = originalInstall;
+            modelCatalogApi.findOrCreateSystemYaml = originalFindOrCreate;
+        }
+    });
+
+    test('keeps the existing profile when catalog and local fallback selection are cancelled', async () => {
+        const configPath = path.join(root, '.labwired', 'lab.yaml');
+        fs.mkdirSync(path.dirname(configPath), { recursive: true });
+        const originalBytes = 'schema_version: "1.0"\ninputs:\n  system: ../old/system.yaml\n';
+        fs.writeFileSync(configPath, originalBytes);
+        const originalWarning = vscode.window.showWarningMessage;
+        const originalOpenDialog = vscode.window.showOpenDialog;
+        const originalQuickPick = vscode.window.showQuickPick;
+        const originalProgress = vscode.window.withProgress;
+        const originalError = vscode.window.showErrorMessage;
+        const originalInstall = modelCatalogApi.installCatalog;
+        const originalFindOrCreate = modelCatalogApi.findOrCreateSystemYaml;
+        const offeredFallbacks: string[][] = [];
+        let pickerCalls = 0;
+        try {
+            (vscode.window as any).showWarningMessage = async () => 'Replace Profile';
+            (vscode.window as any).showErrorMessage = async () => undefined;
+            (vscode.window as any).showOpenDialog = async () => { pickerCalls++; return undefined; };
+            const picks = ['Choose from LabWired catalog', 'Select local YAML'];
+            (vscode.window as any).showQuickPick = async (items: string[]) => {
+                offeredFallbacks.push(items);
+                return picks.shift();
+            };
+            (vscode.window as any).withProgress = async (_options: unknown, task: Function) => task(
+                { report: () => undefined },
+                { isCancellationRequested: false, onCancellationRequested: () => ({ dispose: () => undefined }) }
+            );
+            modelCatalogApi.installCatalog = async () => { throw new Error('LabWired catalog installation cancelled.'); };
+            modelCatalogApi.findOrCreateSystemYaml = async () => { throw new Error('Should not resolve a model after cancellation.'); };
+
+            await vscode.commands.executeCommand('labwired.configureModel');
+
+            assert.deepStrictEqual(offeredFallbacks[1], ['Select local YAML', 'Cancel']);
+            assert.strictEqual(fs.readFileSync(configPath, 'utf8'), originalBytes);
+            assert.strictEqual(pickerCalls, 1);
+        } finally {
+            (vscode.window as any).showWarningMessage = originalWarning;
+            (vscode.window as any).showOpenDialog = originalOpenDialog;
+            (vscode.window as any).showQuickPick = originalQuickPick;
+            (vscode.window as any).withProgress = originalProgress;
+            (vscode.window as any).showErrorMessage = originalError;
+            modelCatalogApi.installCatalog = originalInstall;
+            modelCatalogApi.findOrCreateSystemYaml = originalFindOrCreate;
         }
     });
 
@@ -104,7 +210,8 @@ suite('model profile configuration wizard', function () {
             });
             (vscode.window as any).showOpenDialog = async (options: any) =>
                 options.filters?.['System YAML'] ? [vscode.Uri.file(targetSystem)] : [vscode.Uri.file(targetFirmware)];
-            (vscode.window as any).showQuickPick = async () => 'Use standard LabWired DAP';
+            const picks = ['Select local model YAML', 'Use standard LabWired DAP'];
+            (vscode.window as any).showQuickPick = async () => picks.shift();
             (vscode.window as any).showInformationMessage = async () => undefined;
             (vscode.window as any).showWarningMessage = async () => 'Replace Profile';
 
@@ -131,6 +238,7 @@ suite('model profile configuration wizard', function () {
         fs.writeFileSync(configPath, originalBytes);
         const originalWarning = vscode.window.showWarningMessage;
         const originalOpenDialog = vscode.window.showOpenDialog;
+        const originalQuickPick = vscode.window.showQuickPick;
         let pickerCalls = 0;
         try {
             (vscode.window as any).showWarningMessage = async () => undefined;
@@ -157,9 +265,11 @@ suite('model profile configuration wizard', function () {
         fs.writeFileSync(configPath, originalBytes);
         const originalWarning = vscode.window.showWarningMessage;
         const originalOpenDialog = vscode.window.showOpenDialog;
+        const originalQuickPick = vscode.window.showQuickPick;
         let pickerCalls = 0;
         try {
             (vscode.window as any).showWarningMessage = async () => 'Replace Profile';
+            (vscode.window as any).showQuickPick = async () => 'Select local model YAML';
             (vscode.window as any).showOpenDialog = async () => {
                 pickerCalls++;
                 return undefined;
@@ -174,6 +284,7 @@ suite('model profile configuration wizard', function () {
         } finally {
             (vscode.window as any).showWarningMessage = originalWarning;
             (vscode.window as any).showOpenDialog = originalOpenDialog;
+            (vscode.window as any).showQuickPick = originalQuickPick;
         }
     });
 
@@ -191,7 +302,7 @@ suite('model profile configuration wizard', function () {
                 if (options.filters?.['Firmware ELF']) return [vscode.Uri.file(firmwareFile)];
                 return [vscode.Uri.file(customExecutable)];
             };
-            const quickPicks = ['Configure custom DAP', 'Select existing executable', 'Build before each F5'];
+            const quickPicks = ['Select local model YAML', 'Configure custom DAP', 'Select existing executable', 'Build before each F5'];
             (vscode.window as any).showQuickPick = async () => quickPicks.shift();
             const inputs = ['cargo', '["build", "-p", "custom-dap", "--release"]', '.'];
             (vscode.window as any).showInputBox = async () => inputs.shift();
@@ -228,7 +339,7 @@ suite('model profile configuration wizard', function () {
                 options.filters?.['System YAML'] ? [vscode.Uri.file(systemFile)]
                     : options.filters?.['Firmware ELF'] ? [vscode.Uri.file(firmwareFile)]
                         : undefined;
-            const picks = ['Configure custom DAP', 'Enter executable path', 'Build before each F5'];
+            const picks = ['Select local model YAML', 'Configure custom DAP', 'Enter executable path', 'Build before each F5'];
             (vscode.window as any).showQuickPick = async () => picks.shift();
             const inputs = ['target/release/future-custom-dap', 'cargo', '["build", "--release"]', '.'];
             (vscode.window as any).showInputBox = async () => inputs.shift();
@@ -270,7 +381,7 @@ suite('model profile configuration wizard', function () {
                 options.filters?.['System YAML'] ? [vscode.Uri.file(targetSystem)]
                     : options.filters?.['Firmware ELF'] ? [vscode.Uri.file(targetFirmware)]
                         : undefined;
-            const picks = ['Configure custom DAP', 'Enter executable path', 'Use prebuilt executable'];
+            const picks = ['Select local model YAML', 'Configure custom DAP', 'Enter executable path', 'Use prebuilt executable'];
             (vscode.window as any).showQuickPick = async () => picks.shift();
             (vscode.window as any).showInputBox = async () => 'missing-dap';
             let errorMessage = '';
@@ -320,7 +431,7 @@ suite('model profile configuration wizard', function () {
                 options.filters?.['System YAML'] ? [vscode.Uri.file(targetSystem)]
                     : options.filters?.['Firmware ELF'] ? [vscode.Uri.file(targetFirmware)]
                         : undefined;
-            const picks = ['Configure custom DAP', 'Enter executable path', 'Use prebuilt executable'];
+            const picks = ['Select local model YAML', 'Configure custom DAP', 'Enter executable path', 'Use prebuilt executable'];
             windowApi.showQuickPick = async () => picks.shift();
             windowApi.showInputBox = async () => 'target/debug/labwired-pro-dap';
             windowApi.showErrorMessage = async (message: string) => { errorMessage = message; };
