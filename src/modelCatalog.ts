@@ -38,6 +38,7 @@ const COMMIT_PATTERN = /^[a-f0-9]{40}$/i;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/i;
 const CHIP_NAME_PATTERN = /^[a-z0-9][a-z0-9._-]*$/i;
 const MAX_REDIRECTS = 5;
+const CATALOG_ARCHIVE_FILE = 'configs.tar.gz';
 
 export interface CatalogManifest {
     schema_version: 1;
@@ -353,6 +354,115 @@ async function removeIfPresent(target: string): Promise<void> {
     await fs.promises.rm(target, { recursive: true, force: true });
 }
 
+async function readRegularFile(filePath: string): Promise<Buffer | undefined> {
+    let stat: fs.Stats;
+    try {
+        stat = await fs.promises.lstat(filePath);
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+        throw error;
+    }
+    if (!stat.isFile() || stat.isSymbolicLink()) return undefined;
+    return fs.promises.readFile(filePath);
+}
+
+async function listCatalogFiles(directory: string): Promise<Map<string, Buffer> | undefined> {
+    const files = new Map<string, Buffer>();
+    const visit = async (current: string): Promise<boolean> => {
+        const entries = await fs.promises.readdir(current, { withFileTypes: true });
+        for (const entry of entries) {
+            if (entry.isSymbolicLink()) return false;
+            const full = path.join(current, entry.name);
+            if (entry.isDirectory()) {
+                if (!await visit(full)) return false;
+                continue;
+            }
+            if (!entry.isFile()) return false;
+            const relative = path.relative(directory, full).split(path.sep).join('/');
+            files.set(relative, await fs.promises.readFile(full));
+        }
+        return true;
+    };
+
+    try {
+        if (!await visit(directory)) return undefined;
+    } catch (error) {
+        if ((error as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+        throw error;
+    }
+    return files;
+}
+
+async function existingCatalogMatches(
+    commitPath: string,
+    configsPath: string,
+    manifest: CatalogManifest,
+    token: CancellationTokenLike,
+): Promise<boolean> {
+    if (!await isDirectoryWithoutFollowingLinks(configsPath)) return false;
+    const archive = await readRegularFile(path.join(commitPath, CATALOG_ARCHIVE_FILE));
+    if (!archive) return false;
+    const checksum = crypto.createHash('sha256').update(archive).digest('hex');
+    if (checksum !== manifest.sha256) return false;
+
+    const tempName = `.verify-${process.pid}-${crypto.randomBytes(8).toString('hex')}`;
+    const tempPath = path.join(path.dirname(commitPath), tempName);
+    const tempArchive = `${tempPath}.tar.gz`;
+    try {
+        await fs.promises.mkdir(tempPath, { recursive: false, mode: 0o700 });
+        await fs.promises.writeFile(tempArchive, archive, { flag: 'wx', mode: 0o600 });
+        await extractArchiveSafely(tempArchive, tempPath, token);
+        const extractedConfigs = path.join(tempPath, 'configs');
+        await assertCatalogTree(extractedConfigs, manifest.chips);
+        const extracted = await listCatalogFiles(extractedConfigs);
+        const onDisk = await listCatalogFiles(configsPath);
+        if (!extracted || !onDisk) return false;
+        for (const [relative, bytes] of extracted) {
+            const current = onDisk.get(relative);
+            if (!current || !current.equals(bytes)) return false;
+        }
+        for (const relative of onDisk.keys()) {
+            if (!extracted.has(relative) && !/^systems\/[^/]+$/.test(relative)) return false;
+        }
+        return true;
+    } catch (error) {
+        if (token.isCancellationRequested) throw error;
+        const message = error instanceof Error ? error.message : '';
+        if (/cancelled/i.test(message)) throw error;
+        return false;
+    } finally {
+        await removeIfPresent(tempPath);
+        await removeIfPresent(tempArchive);
+    }
+}
+
+async function assertNoSymlinkOnPath(root: string, target: string): Promise<void> {
+    const relative = path.relative(root, target);
+    if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
+        throw new Error('The LabWired catalog path escapes its directory.');
+    }
+    const rootStat = await fs.promises.lstat(root);
+    if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) {
+        throw new Error('The LabWired catalog directory is not a real directory.');
+    }
+
+    let current = root;
+    for (const part of relative.split(path.sep)) {
+        if (!part || part === '.') continue;
+        current = path.join(current, part);
+        let stat: fs.Stats;
+        try {
+            stat = await fs.promises.lstat(current);
+        } catch (error) {
+            if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+            throw error;
+        }
+        if (stat.isSymbolicLink()) {
+            throw new Error('The LabWired catalog path contains a symlink.');
+        }
+    }
+}
+
 export async function installCatalog(
     rootPath: string,
     progress: ProgressReporter,
@@ -365,10 +475,10 @@ export async function installCatalog(
     const commitPath = path.join(modelsPath, manifest.core_commit);
     const configsPath = path.join(commitPath, 'configs');
 
-    if (await isDirectoryWithoutFollowingLinks(configsPath)) {
-        await assertCatalogTree(configsPath, manifest.chips);
+    if (await existingCatalogMatches(commitPath, configsPath, manifest, token)) {
         return { ...manifest, configsPath };
     }
+    await removeIfPresent(commitPath);
 
     await fs.promises.mkdir(modelsPath, { recursive: true });
     const tempName = `.tmp-${process.pid}-${crypto.randomBytes(8).toString('hex')}`;
@@ -390,13 +500,17 @@ export async function installCatalog(
         assertNotCancelled(token);
         const stagedConfigs = path.join(tempPath, 'configs');
         await assertCatalogTree(stagedConfigs, manifest.chips);
+        await fs.promises.writeFile(
+            path.join(tempPath, CATALOG_ARCHIVE_FILE),
+            archive,
+            { flag: 'wx', mode: 0o600 }
+        );
 
         await fs.promises.mkdir(modelsPath, { recursive: true });
         try {
             await fs.promises.rename(tempPath, commitPath);
         } catch (error) {
-            if (!await isDirectoryWithoutFollowingLinks(configsPath)) throw error;
-            await assertCatalogTree(configsPath, manifest.chips);
+            if (!await existingCatalogMatches(commitPath, configsPath, manifest, token)) throw error;
         }
         return { ...manifest, configsPath };
     } finally {
@@ -412,6 +526,7 @@ export async function findOrCreateSystemYaml(catalog: InstalledCatalog, chip: st
 
     const systemsPath = path.join(catalog.configsPath, 'systems');
     const systemPath = path.join(systemsPath, `${chip}.yaml`);
+    await assertNoSymlinkOnPath(catalog.configsPath, systemPath);
     try {
         const stat = await fs.promises.lstat(systemPath);
         if (!stat.isFile() || stat.isSymbolicLink()) throw new Error(`The LabWired system manifest for '${chip}' is not a regular file.`);
@@ -420,7 +535,9 @@ export async function findOrCreateSystemYaml(catalog: InstalledCatalog, chip: st
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     }
 
-    await fs.promises.mkdir(systemsPath, { recursive: true });
+    if (!await isDirectoryWithoutFollowingLinks(systemsPath)) {
+        await fs.promises.mkdir(systemsPath);
+    }
     const fallback = yaml.dump({
         name: chip,
         chip: `../chips/${chip}.yaml`,

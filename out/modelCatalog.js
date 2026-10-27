@@ -28,6 +28,7 @@ const COMMIT_PATTERN = /^[a-f0-9]{40}$/i;
 const SHA256_PATTERN = /^[a-f0-9]{64}$/i;
 const CHIP_NAME_PATTERN = /^[a-z0-9][a-z0-9._-]*$/i;
 const MAX_REDIRECTS = 5;
+const CATALOG_ARCHIVE_FILE = 'configs.tar.gz';
 function getTarStream() {
     return require('tar-stream');
 }
@@ -314,6 +315,133 @@ function removeIfPresent(target) {
         yield fs.promises.rm(target, { recursive: true, force: true });
     });
 }
+function readRegularFile(filePath) {
+    return __awaiter(this, void 0, void 0, function* () {
+        let stat;
+        try {
+            stat = yield fs.promises.lstat(filePath);
+        }
+        catch (error) {
+            if (error.code === 'ENOENT')
+                return undefined;
+            throw error;
+        }
+        if (!stat.isFile() || stat.isSymbolicLink())
+            return undefined;
+        return fs.promises.readFile(filePath);
+    });
+}
+function listCatalogFiles(directory) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const files = new Map();
+        const visit = (current) => __awaiter(this, void 0, void 0, function* () {
+            const entries = yield fs.promises.readdir(current, { withFileTypes: true });
+            for (const entry of entries) {
+                if (entry.isSymbolicLink())
+                    return false;
+                const full = path.join(current, entry.name);
+                if (entry.isDirectory()) {
+                    if (!(yield visit(full)))
+                        return false;
+                    continue;
+                }
+                if (!entry.isFile())
+                    return false;
+                const relative = path.relative(directory, full).split(path.sep).join('/');
+                files.set(relative, yield fs.promises.readFile(full));
+            }
+            return true;
+        });
+        try {
+            if (!(yield visit(directory)))
+                return undefined;
+        }
+        catch (error) {
+            if (error.code === 'ENOENT')
+                return undefined;
+            throw error;
+        }
+        return files;
+    });
+}
+function existingCatalogMatches(commitPath, configsPath, manifest, token) {
+    return __awaiter(this, void 0, void 0, function* () {
+        if (!(yield isDirectoryWithoutFollowingLinks(configsPath)))
+            return false;
+        const archive = yield readRegularFile(path.join(commitPath, CATALOG_ARCHIVE_FILE));
+        if (!archive)
+            return false;
+        const checksum = crypto.createHash('sha256').update(archive).digest('hex');
+        if (checksum !== manifest.sha256)
+            return false;
+        const tempName = `.verify-${process.pid}-${crypto.randomBytes(8).toString('hex')}`;
+        const tempPath = path.join(path.dirname(commitPath), tempName);
+        const tempArchive = `${tempPath}.tar.gz`;
+        try {
+            yield fs.promises.mkdir(tempPath, { recursive: false, mode: 0o700 });
+            yield fs.promises.writeFile(tempArchive, archive, { flag: 'wx', mode: 0o600 });
+            yield extractArchiveSafely(tempArchive, tempPath, token);
+            const extractedConfigs = path.join(tempPath, 'configs');
+            yield assertCatalogTree(extractedConfigs, manifest.chips);
+            const extracted = yield listCatalogFiles(extractedConfigs);
+            const onDisk = yield listCatalogFiles(configsPath);
+            if (!extracted || !onDisk)
+                return false;
+            for (const [relative, bytes] of extracted) {
+                const current = onDisk.get(relative);
+                if (!current || !current.equals(bytes))
+                    return false;
+            }
+            for (const relative of onDisk.keys()) {
+                if (!extracted.has(relative) && !/^systems\/[^/]+$/.test(relative))
+                    return false;
+            }
+            return true;
+        }
+        catch (error) {
+            if (token.isCancellationRequested)
+                throw error;
+            const message = error instanceof Error ? error.message : '';
+            if (/cancelled/i.test(message))
+                throw error;
+            return false;
+        }
+        finally {
+            yield removeIfPresent(tempPath);
+            yield removeIfPresent(tempArchive);
+        }
+    });
+}
+function assertNoSymlinkOnPath(root, target) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const relative = path.relative(root, target);
+        if (!relative || relative.startsWith('..') || path.isAbsolute(relative)) {
+            throw new Error('The LabWired catalog path escapes its directory.');
+        }
+        const rootStat = yield fs.promises.lstat(root);
+        if (!rootStat.isDirectory() || rootStat.isSymbolicLink()) {
+            throw new Error('The LabWired catalog directory is not a real directory.');
+        }
+        let current = root;
+        for (const part of relative.split(path.sep)) {
+            if (!part || part === '.')
+                continue;
+            current = path.join(current, part);
+            let stat;
+            try {
+                stat = yield fs.promises.lstat(current);
+            }
+            catch (error) {
+                if (error.code === 'ENOENT')
+                    return;
+                throw error;
+            }
+            if (stat.isSymbolicLink()) {
+                throw new Error('The LabWired catalog path contains a symlink.');
+            }
+        }
+    });
+}
 function installCatalog(rootPath, progress, token, baseUrl = DEFAULT_CATALOG_URL) {
     return __awaiter(this, void 0, void 0, function* () {
         assertNotCancelled(token);
@@ -321,10 +449,10 @@ function installCatalog(rootPath, progress, token, baseUrl = DEFAULT_CATALOG_URL
         const modelsPath = path.join(rootPath, '.labwired', 'models');
         const commitPath = path.join(modelsPath, manifest.core_commit);
         const configsPath = path.join(commitPath, 'configs');
-        if (yield isDirectoryWithoutFollowingLinks(configsPath)) {
-            yield assertCatalogTree(configsPath, manifest.chips);
+        if (yield existingCatalogMatches(commitPath, configsPath, manifest, token)) {
             return Object.assign(Object.assign({}, manifest), { configsPath });
         }
+        yield removeIfPresent(commitPath);
         yield fs.promises.mkdir(modelsPath, { recursive: true });
         const tempName = `.tmp-${process.pid}-${crypto.randomBytes(8).toString('hex')}`;
         const tempPath = path.join(modelsPath, tempName);
@@ -344,14 +472,14 @@ function installCatalog(rootPath, progress, token, baseUrl = DEFAULT_CATALOG_URL
             assertNotCancelled(token);
             const stagedConfigs = path.join(tempPath, 'configs');
             yield assertCatalogTree(stagedConfigs, manifest.chips);
+            yield fs.promises.writeFile(path.join(tempPath, CATALOG_ARCHIVE_FILE), archive, { flag: 'wx', mode: 0o600 });
             yield fs.promises.mkdir(modelsPath, { recursive: true });
             try {
                 yield fs.promises.rename(tempPath, commitPath);
             }
             catch (error) {
-                if (!(yield isDirectoryWithoutFollowingLinks(configsPath)))
+                if (!(yield existingCatalogMatches(commitPath, configsPath, manifest, token)))
                     throw error;
-                yield assertCatalogTree(configsPath, manifest.chips);
             }
             return Object.assign(Object.assign({}, manifest), { configsPath });
         }
@@ -369,6 +497,7 @@ function findOrCreateSystemYaml(catalog, chip) {
         }
         const systemsPath = path.join(catalog.configsPath, 'systems');
         const systemPath = path.join(systemsPath, `${chip}.yaml`);
+        yield assertNoSymlinkOnPath(catalog.configsPath, systemPath);
         try {
             const stat = yield fs.promises.lstat(systemPath);
             if (!stat.isFile() || stat.isSymbolicLink())
@@ -379,7 +508,9 @@ function findOrCreateSystemYaml(catalog, chip) {
             if (error.code !== 'ENOENT')
                 throw error;
         }
-        yield fs.promises.mkdir(systemsPath, { recursive: true });
+        if (!(yield isDirectoryWithoutFollowingLinks(systemsPath))) {
+            yield fs.promises.mkdir(systemsPath);
+        }
         const fallback = yaml.dump({
             name: chip,
             chip: `../chips/${chip}.yaml`,
