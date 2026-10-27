@@ -15,6 +15,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const yaml = require("js-yaml");
+const pathAssertions_1 = require("../pathAssertions");
 const extension_1 = require("../../extension");
 const commandCenter_1 = require("../../commandCenter");
 const topologyPanel_1 = require("../../topologyPanel");
@@ -92,7 +93,7 @@ suite('model profile views', function () {
             type: 'labwired', name: 'Model profile test', request: 'launch'
         };
         const resolved = yield configurationProvider.resolveDebugConfiguration(workspaceFolder, debugConfig);
-        assert.strictEqual(resolved === null || resolved === void 0 ? void 0 : resolved.systemConfig, systemFile);
+        assert.strictEqual((resolved === null || resolved === void 0 ? void 0 : resolved.systemConfig) && (0, pathAssertions_1.normalizePathForComparison)(resolved.systemConfig), (0, pathAssertions_1.normalizePathForComparison)(systemFile));
         const boardMessages = [];
         const commandCenter = new commandCenter_1.LabwiredCommandCenterProvider(vscode.Uri.file(root), true);
         commandCenter._view = { webview: { postMessage: (message) => boardMessages.push(message) } };
@@ -148,7 +149,7 @@ suite('model profile views', function () {
             const topology = Object.create(topologyPanel_1.SystemTopologyPanel.prototype);
             const topologyBoard = yield topology._getBoardData();
             const board = (_b = boardMessages.find((message) => message.type === 'boardUpdate')) === null || _b === void 0 ? void 0 : _b.data;
-            assert.strictEqual(f5 === null || f5 === void 0 ? void 0 : f5.systemConfig, activeSystem);
+            assert.strictEqual((f5 === null || f5 === void 0 ? void 0 : f5.systemConfig) && (0, pathAssertions_1.normalizePathForComparison)(f5.systemConfig), (0, pathAssertions_1.normalizePathForComparison)(activeSystem));
             assert.strictEqual(board === null || board === void 0 ? void 0 : board.name, 'Active Session Workspace');
             assert.strictEqual(topologyBoard === null || topologyBoard === void 0 ? void 0 : topologyBoard.name, 'Active Session Workspace');
         }

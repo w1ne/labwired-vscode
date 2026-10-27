@@ -15,6 +15,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const yaml = require("js-yaml");
+const pathAssertions_1 = require("../pathAssertions");
 const modelCatalogApi = require('../../modelCatalog');
 function restoreOwnProperty(target, key, descriptor) {
     if (descriptor)
@@ -102,7 +103,7 @@ suite('model profile configuration wizard', function () {
         };
         try {
             modelCatalogApi.installCatalog = (rootPath) => __awaiter(this, void 0, void 0, function* () {
-                assert.strictEqual(rootPath, root);
+                assert.strictEqual((0, pathAssertions_1.normalizePathForComparison)(rootPath), (0, pathAssertions_1.normalizePathForComparison)(root));
                 return catalog;
             });
             modelCatalogApi.findOrCreateSystemYaml = (_catalog, chip) => __awaiter(this, void 0, void 0, function* () {

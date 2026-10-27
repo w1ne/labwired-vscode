@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
+import { normalizePathForComparison } from '../pathAssertions';
 
 function restoreOwnProperty(target: any, key: string, descriptor: PropertyDescriptor | undefined): void {
     if (descriptor) Object.defineProperty(target, key, descriptor);
@@ -268,9 +269,9 @@ suite('multi-root simulator start', function () {
 
             await vscode.commands.executeCommand('labwired.compileAndRun');
 
-            assert.strictEqual(buildCwd, current.root);
+            assert.strictEqual(normalizePathForComparison(buildCwd), normalizePathForComparison(current.root));
             const runnerRun = runScripts[0];
-            assert.strictEqual(runnerRun.cwd, current.root);
+            assert.strictEqual(normalizePathForComparison(runnerRun.cwd), normalizePathForComparison(current.root));
             assert.strictEqual(runnerRun.cli, expectedRunner);
             assert.notStrictEqual(runnerRun.path, labConfigPath);
             assert.strictEqual(path.dirname(runnerRun.path), path.dirname(labConfigPath));

@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
+import { normalizePathForComparison } from '../pathAssertions';
 import { LabwiredConfigurationProvider } from '../../extension';
 import { LabwiredCommandCenterProvider } from '../../commandCenter';
 import { SystemTopologyPanel } from '../../topologyPanel';
@@ -90,7 +91,10 @@ suite('model profile views', function () {
             type: 'labwired', name: 'Model profile test', request: 'launch'
         };
         const resolved = await configurationProvider.resolveDebugConfiguration(workspaceFolder, debugConfig);
-        assert.strictEqual(resolved?.systemConfig, systemFile);
+        assert.strictEqual(
+            resolved?.systemConfig && normalizePathForComparison(resolved.systemConfig),
+            normalizePathForComparison(systemFile),
+        );
 
         const boardMessages: any[] = [];
         const commandCenter = new LabwiredCommandCenterProvider(vscode.Uri.file(root), true);
@@ -157,7 +161,10 @@ suite('model profile views', function () {
             const topologyBoard = await topology._getBoardData();
             const board = boardMessages.find((message) => message.type === 'boardUpdate')?.data;
 
-            assert.strictEqual(f5?.systemConfig, activeSystem);
+            assert.strictEqual(
+                f5?.systemConfig && normalizePathForComparison(f5.systemConfig),
+                normalizePathForComparison(activeSystem),
+            );
             assert.strictEqual(board?.name, 'Active Session Workspace');
             assert.strictEqual(topologyBoard?.name, 'Active Session Workspace');
         } finally {

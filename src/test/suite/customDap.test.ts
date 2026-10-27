@@ -5,6 +5,7 @@ import * as os from 'os';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
 import { LabwiredDebugAdapterDescriptorFactory } from '../../extension';
+import { normalizePathForComparison } from '../pathAssertions';
 
 suite('custom DAP launch', function () {
     this.timeout(15000);
@@ -75,7 +76,10 @@ suite('custom DAP launch', function () {
                 configuration: { type: 'labwired' },
             } as any, undefined);
 
-            assert.strictEqual((descriptor as vscode.DebugAdapterExecutable).command, executable);
+            assert.strictEqual(
+                normalizePathForComparison((descriptor as vscode.DebugAdapterExecutable).command),
+                normalizePathForComparison(executable),
+            );
             assert.ok(fs.existsSync(executable));
             assert.ok(output.lines.join('').includes('custom DAP built'));
         } finally {
@@ -148,7 +152,10 @@ suite('custom DAP launch', function () {
                 configuration: { type: 'labwired' },
             } as any, undefined);
 
-            assert.strictEqual((descriptor as vscode.DebugAdapterExecutable).command, executable);
+            assert.strictEqual(
+                normalizePathForComparison((descriptor as vscode.DebugAdapterExecutable).command),
+                normalizePathForComparison(executable),
+            );
         } finally {
             await restoreStandardDapPath(oldDapPath);
             fs.rmSync(root, { recursive: true, force: true });

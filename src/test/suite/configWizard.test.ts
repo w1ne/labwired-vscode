@@ -4,6 +4,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
+import { normalizePathForComparison } from '../pathAssertions';
 
 const modelCatalogApi = require('../../modelCatalog');
 
@@ -98,7 +99,7 @@ suite('model profile configuration wizard', function () {
         };
         try {
             modelCatalogApi.installCatalog = async (rootPath: string) => {
-                assert.strictEqual(rootPath, root);
+                assert.strictEqual(normalizePathForComparison(rootPath), normalizePathForComparison(root));
                 return catalog;
             };
             modelCatalogApi.findOrCreateSystemYaml = async (_catalog: unknown, chip: string) => {
