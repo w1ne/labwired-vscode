@@ -306,6 +306,7 @@ function findOrCreateSystemYaml(catalog, chip) {
         }
         yield fs.promises.mkdir(systemsPath, { recursive: true });
         const fallback = yaml.dump({
+            name: chip,
             chip: `../chips/${chip}.yaml`,
             external_devices: [],
         });

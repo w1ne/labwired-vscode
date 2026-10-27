@@ -166,6 +166,7 @@ describe('model catalog installer', function () {
             const systemPath = await catalogModule.findOrCreateSystemYaml(catalog, 'alpha');
             assert.strictEqual(systemPath, path.join(catalog.configsPath, 'systems', 'alpha.yaml'));
             assert.deepStrictEqual(require('js-yaml').load(fs.readFileSync(systemPath, 'utf8')), {
+                name: 'alpha',
                 chip: '../chips/alpha.yaml',
                 external_devices: [],
             });
