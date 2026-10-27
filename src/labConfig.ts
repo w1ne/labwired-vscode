@@ -153,8 +153,20 @@ function removeTopLevelYamlEntries(source: string, keys: string[]): string {
     if (document.contents instanceof YAML.YAMLMap) {
         for (const key of keys) document.delete(key);
     }
+    rewriteBareAtStartTags(document);
 
     return document.toString();
+}
+
+/** `!at_start` is a unit tag. Emitting it as an empty string makes serde_yaml reject the script. */
+function rewriteBareAtStartTags(document: YAML.Document): void {
+    YAML.visit(document, {
+        Scalar(_key, node) {
+            if (node.tag !== '!at_start') return;
+            node.value = null;
+            node.source = undefined;
+        },
+    });
 }
 
 /** The active debug session wins; otherwise use the system selected in lab.yaml. */

@@ -276,6 +276,40 @@ describe('model profile lab.yaml', () => {
         }
     });
 
+    it('emits bare !at_start triggers as null tags core serde_yaml accepts', async () => {
+        const profile = [
+            'schema_version: "1.2"',
+            'inputs: {}',
+            'debug:',
+            '  adapter:',
+            '    executable: ../target/model-dap',
+            'runner:',
+            '  executable: ../target/release/labwired-pro',
+            'uart_injections:',
+            '  - uart: "uart0"',
+            '    trigger: !at_start',
+            '    bytes: [1, 2]',
+            'stimuli:',
+            '  - trigger: !after_cycles { cycles: 100 }',
+            '    value: 1.0',
+        ].join('\n') + '\n';
+        fs.writeFileSync(configFile, profile);
+
+        const module = require('../../labConfig') as { createCoreCompatibleTestScript: (file: string) => Promise<string> };
+        const testScript = await module.createCoreCompatibleTestScript(configFile);
+        try {
+            const serialized = fs.readFileSync(testScript, 'utf8');
+            assert.ok(!serialized.includes('!at_start ""'), serialized);
+            assert.ok(!serialized.includes("!at_start ''"), serialized);
+            assert.match(serialized, /trigger: !at_start null\b/);
+            assert.match(serialized, /trigger: !after_cycles \{ cycles: 100 \}/);
+            assert.ok(!serialized.includes('debug:'));
+            assert.ok(!serialized.includes('runner:'));
+        } finally {
+            fs.rmSync(testScript, { force: true });
+        }
+    });
+
     it('preserves large YAML integers exactly when creating the core test script', async () => {
         const profile = [
             'schema_version: "1.2"',
