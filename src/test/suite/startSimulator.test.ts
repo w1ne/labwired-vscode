@@ -272,7 +272,10 @@ suite('multi-root simulator start', function () {
             assert.strictEqual(normalizePathForComparison(buildCwd), normalizePathForComparison(current.root));
             const runnerRun = runScripts[0];
             assert.strictEqual(normalizePathForComparison(runnerRun.cwd), normalizePathForComparison(current.root));
-            assert.strictEqual(runnerRun.cli, expectedRunner);
+            assert.strictEqual(
+                normalizePathForComparison(runnerRun.cli),
+                normalizePathForComparison(expectedRunner),
+            );
             assert.notStrictEqual(runnerRun.path, labConfigPath);
             assert.strictEqual(path.dirname(runnerRun.path), path.dirname(labConfigPath));
             assert.strictEqual(runnerRun.existedDuringRun, true);
