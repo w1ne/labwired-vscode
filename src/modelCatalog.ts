@@ -338,6 +338,7 @@ export async function findOrCreateSystemYaml(catalog: InstalledCatalog, chip: st
 
     await fs.promises.mkdir(systemsPath, { recursive: true });
     const fallback = yaml.dump({
+        name: chip,
         chip: `../chips/${chip}.yaml`,
         external_devices: [],
     });

@@ -28,7 +28,7 @@
 - [ ] Add `tar` as a direct runtime dependency with `npm install --save tar`.
 - [ ] Implement `installCatalog(rootPath, progress, token, baseUrl?)` and `findOrCreateSystemYaml(catalog, chip)`. Use manifest shape `{schema_version: 1, core_commit, archive: "configs.tar.gz", sha256, chips}`; reject invalid SHA/commit/name values and unexpected archive names.
 - [ ] Verify archive SHA-256 before extraction. Preflight every tar entry, rejecting absolute paths, `..` traversal, and links; extract only the `configs/` root into a temporary sibling directory, then rename into the commit cache. Remove temporary files on failure or cancellation.
-- [ ] When `configs/systems/<chip>.yaml` is missing, write a portable minimal manifest there with `chip: ../chips/<chip>.yaml` and `external_devices: []`, matching the core Catalog fallback.
+- [ ] When `configs/systems/<chip>.yaml` is missing, write a portable minimal manifest there with `name: <chip>`, `chip: ../chips/<chip>.yaml`, and `external_devices: []`, matching the core Catalog fallback.
 - [ ] Run `npm run test:unit -- --grep "model catalog"`; expect all new tests to pass, including checksum mismatch, unsafe archive, and cache reuse cases.
 
 ## Task 2: Connect the catalog to the native model wizard
