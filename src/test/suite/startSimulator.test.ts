@@ -147,13 +147,12 @@ suite('multi-root simulator start', function () {
         ].join('\n') + '\n');
 
         const capturePath = path.join(current.root, 'run-capture.json');
-        const cliPath = path.join(current.root, 'fake-labwired-cli');
-        fs.writeFileSync(cliPath, [
-            '#!/usr/bin/env node',
+        const cliScript = path.join(current.root, 'test.js');
+        fs.writeFileSync(cliScript, [
             'const fs = require("fs");',
             'fs.writeFileSync(process.env.LW_RUN_CAPTURE, JSON.stringify({ cwd: process.cwd(), args: process.argv.slice(2) }));',
         ].join('\n') + '\n');
-        fs.chmodSync(cliPath, 0o755);
+        const cliPath = process.execPath;
 
         const workspaceApi = vscode.workspace as any;
         const debugApi = vscode.debug as any;

@@ -5,6 +5,11 @@ import * as os from 'os';
 import * as path from 'path';
 import * as yaml from 'js-yaml';
 
+function restoreOwnProperty(target: any, key: string, descriptor: PropertyDescriptor | undefined): void {
+    if (descriptor) Object.defineProperty(target, key, descriptor);
+    else delete target[key];
+}
+
 suite('model profile configuration wizard', function () {
     this.timeout(15000);
     let root: string;
@@ -282,6 +287,56 @@ suite('model profile configuration wizard', function () {
             (vscode.window as any).showQuickPick = originalQuickPick;
             (vscode.window as any).showInputBox = originalInputBox;
             (vscode.window as any).showErrorMessage = originalError;
+            fs.rmSync(targetRoot, { recursive: true, force: true });
+        }
+    });
+
+    test('accepts an extensionless entered Windows prebuilt path when its .exe exists', async () => {
+        const targetRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'lw-windows-prebuilt-config-'));
+        const targetSystem = path.join(targetRoot, 'system.yaml');
+        const targetFirmware = path.join(targetRoot, 'firmware.elf');
+        const executable = path.join(targetRoot, 'target', 'debug', 'labwired-pro-dap');
+        fs.mkdirSync(path.dirname(executable), { recursive: true });
+        fs.writeFileSync(targetSystem, 'name: Windows Prebuilt Validation\n');
+        fs.writeFileSync(targetFirmware, 'firmware');
+        fs.writeFileSync(`${executable}.exe`, 'adapter');
+        const folder = { uri: vscode.Uri.file(targetRoot), name: 'windows-prebuilt-validation', index: 0 };
+        const workspaceApi = vscode.workspace as any;
+        const originalFolders = Object.getOwnPropertyDescriptor(workspaceApi, 'workspaceFolders');
+        const windowApi = vscode.window as any;
+        const originalOpenDialog = Object.getOwnPropertyDescriptor(windowApi, 'showOpenDialog');
+        const originalQuickPick = Object.getOwnPropertyDescriptor(windowApi, 'showQuickPick');
+        const originalInputBox = Object.getOwnPropertyDescriptor(windowApi, 'showInputBox');
+        const originalError = Object.getOwnPropertyDescriptor(windowApi, 'showErrorMessage');
+        const originalPlatform = Object.getOwnPropertyDescriptor(process, 'platform');
+        let errorMessage = '';
+        try {
+            const extension = vscode.extensions.getExtension('w1ne.labwired-vscode');
+            assert.ok(extension);
+            await extension.activate();
+            Object.defineProperty(workspaceApi, 'workspaceFolders', { configurable: true, value: [folder] });
+            Object.defineProperty(process, 'platform', { configurable: true, value: 'win32' });
+            windowApi.showOpenDialog = async (options: any) =>
+                options.filters?.['System YAML'] ? [vscode.Uri.file(targetSystem)]
+                    : options.filters?.['Firmware ELF'] ? [vscode.Uri.file(targetFirmware)]
+                        : undefined;
+            const picks = ['Configure custom DAP', 'Enter executable path', 'Use prebuilt executable'];
+            windowApi.showQuickPick = async () => picks.shift();
+            windowApi.showInputBox = async () => 'target/debug/labwired-pro-dap';
+            windowApi.showErrorMessage = async (message: string) => { errorMessage = message; };
+
+            await vscode.commands.executeCommand('labwired.configureModel', folder);
+
+            const saved = yaml.load(fs.readFileSync(path.join(targetRoot, '.labwired', 'lab.yaml'), 'utf8')) as any;
+            assert.strictEqual(errorMessage, '');
+            assert.strictEqual(saved.debug.adapter.executable, '../target/debug/labwired-pro-dap.exe');
+        } finally {
+            restoreOwnProperty(workspaceApi, 'workspaceFolders', originalFolders);
+            restoreOwnProperty(windowApi, 'showOpenDialog', originalOpenDialog);
+            restoreOwnProperty(windowApi, 'showQuickPick', originalQuickPick);
+            restoreOwnProperty(windowApi, 'showInputBox', originalInputBox);
+            restoreOwnProperty(windowApi, 'showErrorMessage', originalError);
+            restoreOwnProperty(process, 'platform', originalPlatform);
             fs.rmSync(targetRoot, { recursive: true, force: true });
         }
     });
