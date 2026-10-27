@@ -16,6 +16,7 @@ const os = require("os");
 const path = require("path");
 const yaml = require("js-yaml");
 const extension_1 = require("../../extension");
+const pathAssertions_1 = require("../pathAssertions");
 suite('custom DAP launch', function () {
     this.timeout(15000);
     function setStandardDapPath(file) {
@@ -82,7 +83,7 @@ suite('custom DAP launch', function () {
                 workspaceFolder: { uri: vscode.Uri.file(root) },
                 configuration: { type: 'labwired' },
             }, undefined);
-            assert.strictEqual(descriptor.command, executable);
+            assert.strictEqual((0, pathAssertions_1.normalizePathForComparison)(descriptor.command), (0, pathAssertions_1.normalizePathForComparison)(executable));
             assert.ok(fs.existsSync(executable));
             assert.ok(output.lines.join('').includes('custom DAP built'));
         }
@@ -152,7 +153,7 @@ suite('custom DAP launch', function () {
                 workspaceFolder: { uri: vscode.Uri.file(root) },
                 configuration: { type: 'labwired' },
             }, undefined);
-            assert.strictEqual(descriptor.command, executable);
+            assert.strictEqual((0, pathAssertions_1.normalizePathForComparison)(descriptor.command), (0, pathAssertions_1.normalizePathForComparison)(executable));
         }
         finally {
             yield restoreStandardDapPath(oldDapPath);

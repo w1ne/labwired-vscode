@@ -14,6 +14,7 @@ const vscode = require("vscode");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
+const pathAssertions_1 = require("../pathAssertions");
 function restoreOwnProperty(target, key, descriptor) {
     if (descriptor)
         Object.defineProperty(target, key, descriptor);
@@ -266,9 +267,9 @@ suite('multi-root simulator start', function () {
                 },
             });
             yield vscode.commands.executeCommand('labwired.compileAndRun');
-            assert.strictEqual(buildCwd, current.root);
+            assert.strictEqual((0, pathAssertions_1.normalizePathForComparison)(buildCwd), (0, pathAssertions_1.normalizePathForComparison)(current.root));
             const runnerRun = runScripts[0];
-            assert.strictEqual(runnerRun.cwd, current.root);
+            assert.strictEqual((0, pathAssertions_1.normalizePathForComparison)(runnerRun.cwd), (0, pathAssertions_1.normalizePathForComparison)(current.root));
             assert.strictEqual(runnerRun.cli, expectedRunner);
             assert.notStrictEqual(runnerRun.path, labConfigPath);
             assert.strictEqual(path.dirname(runnerRun.path), path.dirname(labConfigPath));
