@@ -19,6 +19,7 @@ const vscode = require("vscode");
 const path = require("path");
 const labConfig_1 = require("./labConfig");
 const workspaceSelection_1 = require("./workspaceSelection");
+const customDap_1 = require("./customDap");
 function showModelConfigWizard(target) {
     return __awaiter(this, void 0, void 0, function* () {
         const workspaceFolder = (0, workspaceSelection_1.resolveCurrentModelWorkspaceFolder)(target);
@@ -103,9 +104,12 @@ function showModelConfigWizard(target) {
             });
             if (!buildChoice)
                 return;
-            if (buildChoice === 'Use prebuilt executable' && !(yield fileExists(executablePath))) {
-                vscode.window.showErrorMessage(`LabWired: Prebuilt custom DAP executable was not found at '${executablePath}'.`);
-                return;
+            if (buildChoice === 'Use prebuilt executable') {
+                executablePath = (0, customDap_1.customDapExecutablePath)(executablePath);
+                if (!(yield fileExists(executablePath))) {
+                    vscode.window.showErrorMessage(`LabWired: Prebuilt custom DAP executable was not found at '${executablePath}'.`);
+                    return;
+                }
             }
             let build;
             if (buildChoice === 'Build before each F5') {

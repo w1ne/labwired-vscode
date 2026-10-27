@@ -8,6 +8,7 @@ import * as vscode from 'vscode';
 import * as path from 'path';
 import { findLabConfig, LabConfig, LabDebugAdapter, writeLabConfig } from './labConfig';
 import { ModelWorkspaceTarget, resolveCurrentModelWorkspaceFolder } from './workspaceSelection';
+import { customDapExecutablePath } from './customDap';
 
 export async function showModelConfigWizard(target?: ModelWorkspaceTarget): Promise<void> {
     const workspaceFolder = resolveCurrentModelWorkspaceFolder(target);
@@ -105,9 +106,12 @@ export async function showModelConfigWizard(target?: ModelWorkspaceTarget): Prom
         );
         if (!buildChoice) return;
 
-        if (buildChoice === 'Use prebuilt executable' && !await fileExists(executablePath)) {
-            vscode.window.showErrorMessage(`LabWired: Prebuilt custom DAP executable was not found at '${executablePath}'.`);
-            return;
+        if (buildChoice === 'Use prebuilt executable') {
+            executablePath = customDapExecutablePath(executablePath);
+            if (!await fileExists(executablePath)) {
+                vscode.window.showErrorMessage(`LabWired: Prebuilt custom DAP executable was not found at '${executablePath}'.`);
+                return;
+            }
         }
 
         let build: { command: string; args: string[]; cwd?: string } | undefined;
