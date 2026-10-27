@@ -272,7 +272,7 @@ suite('multi-root simulator start', function () {
             assert.strictEqual((0, pathAssertions_1.normalizePathForComparison)(runnerRun.cwd), (0, pathAssertions_1.normalizePathForComparison)(current.root));
             assert.strictEqual((0, pathAssertions_1.normalizePathForComparison)(runnerRun.cli), (0, pathAssertions_1.normalizePathForComparison)(expectedRunner));
             assert.notStrictEqual(runnerRun.path, labConfigPath);
-            assert.strictEqual(path.dirname(runnerRun.path), path.dirname(labConfigPath));
+            assert.strictEqual((0, pathAssertions_1.normalizePathForComparison)(path.dirname(runnerRun.path)), (0, pathAssertions_1.normalizePathForComparison)(path.dirname(labConfigPath)));
             assert.strictEqual(runnerRun.existedDuringRun, true);
             assert.strictEqual(runnerRun.content, coreTestScript);
             assert.strictEqual(fs.existsSync(runnerRun.path), false);
