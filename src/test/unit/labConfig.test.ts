@@ -105,7 +105,10 @@ describe('model profile lab.yaml', () => {
         fs.writeFileSync(`${runnerPath}.exe`, 'runner');
 
         const profile = readLabConfig(configFile) as any;
-        assert.strictEqual(profile.runner.executable, runnerPath);
+        assert.strictEqual(
+            profile.runner.executable,
+            process.platform === 'win32' ? `${runnerPath}.exe` : runnerPath
+        );
         assert.strictEqual(
             require('../../labConfig').resolveProfileExecutablePath(configFile, '../target/release/labwired-pro', 'win32'),
             `${runnerPath}.exe`

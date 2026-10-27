@@ -6,10 +6,11 @@ export function resolveVSCodeTestExecutable(
     platform = process.platform,
     exists: (filePath: string) => boolean = fs.existsSync
 ): string {
-    if (platform !== 'darwin' || exists(executablePath) || path.basename(executablePath) !== 'Electron') {
+    const pathApi = platform === 'darwin' ? path.posix : path;
+    if (platform !== 'darwin' || exists(executablePath) || pathApi.basename(executablePath) !== 'Electron') {
         return executablePath;
     }
 
-    const currentLauncher = path.join(path.dirname(executablePath), 'Code');
+    const currentLauncher = pathApi.join(pathApi.dirname(executablePath), 'Code');
     return exists(currentLauncher) ? currentLauncher : executablePath;
 }

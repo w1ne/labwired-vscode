@@ -98,7 +98,7 @@ describe('model profile lab.yaml', () => {
         fs.mkdirSync(path.dirname(runnerPath), { recursive: true });
         fs.writeFileSync(`${runnerPath}.exe`, 'runner');
         const profile = (0, labConfig_1.readLabConfig)(configFile);
-        assert.strictEqual(profile.runner.executable, runnerPath);
+        assert.strictEqual(profile.runner.executable, process.platform === 'win32' ? `${runnerPath}.exe` : runnerPath);
         assert.strictEqual(require('../../labConfig').resolveProfileExecutablePath(configFile, '../target/release/labwired-pro', 'win32'), `${runnerPath}.exe`);
     });
     it('reads extension profile fields from core scripts with custom stimulus tags', () => {
