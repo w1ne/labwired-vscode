@@ -25,7 +25,7 @@ const crashFingerprint_1 = require("./crashFingerprint");
 // The core release this extension downloads. Kept at the newest release on
 // purpose: pinning two releases back is how the debugger shipped against a CLI
 // that predated half the boards in the docs.
-exports.CLI_VERSION = 'v0.22.0';
+exports.CLI_VERSION = 'v0.25.0';
 /** The simulator/test-runner CLI. */
 exports.CLI_BIN = 'labwired';
 /** The Debug Adapter the extension spawns for F5. Ships in the SAME tarball. */

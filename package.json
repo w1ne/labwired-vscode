@@ -16,6 +16,7 @@
     "activationEvents": [
         "onCommand:labwired.compileAndRun",
         "onCommand:labwired.configureAgentTools",
+        "onCommand:labwired.configureModel",
         "onCommand:labwired.copyAgentInstall",
         "onCommand:labwired.copyClaudeMcpInstall",
         "onCommand:labwired.signIn",
@@ -69,7 +70,7 @@
                 },
                 "labwired.cliVersion": {
                     "type": "string",
-                    "default": "v0.19.3",
+                    "default": "v0.25.0",
                     "description": "LabWired release tag the extension downloads. The tarball carries both the labwired CLI and the labwired-dap debug adapter (from v0.19.3 onward)."
                 },
                 "labwired.agentPath": {
@@ -90,13 +91,11 @@
                         "properties": {
                             "program": {
                                 "type": "string",
-                                "description": "Path to the ELF firmware file",
-                                "default": "${workspaceFolder}/target/thumbv7m-none-eabi/debug/firmware"
+                                "description": "Path to the ELF firmware file; defaults to inputs.firmware in .labwired/lab.yaml"
                             },
                             "systemConfig": {
                                 "type": "string",
-                                "description": "Path to the system configuration YAML (defines memory map, peripherals)",
-                                "default": "${workspaceFolder}/system.yaml"
+                                "description": "Path to the system configuration YAML; defaults to inputs.system in .labwired/lab.yaml"
                             },
                             "stopOnEntry": {
                                 "type": "boolean",
@@ -239,6 +238,12 @@
             {
                 "command": "labwired.configureProject",
                 "title": "Configure Project\u2026",
+                "icon": "$(gear)",
+                "category": "LabWired"
+            },
+            {
+                "command": "labwired.configureModel",
+                "title": "Configure Model",
                 "icon": "$(gear)",
                 "category": "LabWired"
             },

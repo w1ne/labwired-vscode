@@ -13,6 +13,7 @@ exports.SystemTopologyPanel = void 0;
 const vscode = require("vscode");
 const path = require("path");
 const fs = require("fs");
+const labConfig_1 = require("./labConfig");
 class SystemTopologyPanel {
     static createOrShow(extensionUri) {
         const column = vscode.window.activeTextEditor
@@ -29,14 +30,27 @@ class SystemTopologyPanel {
         SystemTopologyPanel.currentPanel = new SystemTopologyPanel(panel, extensionUri);
     }
     constructor(panel, extensionUri) {
+        var _a;
         this._disposables = [];
         this._panel = panel;
         this._extensionUri = extensionUri;
         this._update();
         this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
-        const watcher = vscode.workspace.createFileSystemWatcher('**/system.yaml');
-        watcher.onDidChange(() => this._update());
-        this._disposables.push(watcher);
+        const watchers = [
+            vscode.workspace.createFileSystemWatcher('**/*.yaml'),
+            vscode.workspace.createFileSystemWatcher('**/*.yml'),
+        ];
+        const profileFolder = (_a = vscode.workspace.workspaceFolders) === null || _a === void 0 ? void 0 : _a[0];
+        if (profileFolder) {
+            watchers.push(vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(profileFolder, '.labwired/lab.yaml')));
+        }
+        for (const watcher of watchers) {
+            watcher.onDidChange(() => this._update());
+            watcher.onDidCreate(() => this._update());
+            watcher.onDidDelete(() => this._update());
+            this._disposables.push(watcher);
+        }
+        this._disposables.push(vscode.debug.onDidChangeActiveDebugSession(() => this._update()));
     }
     sendTelemetry(data) {
         this._panel.webview.postMessage({ type: 'telemetry', data });
@@ -61,15 +75,20 @@ class SystemTopologyPanel {
         });
     }
     _getBoardData() {
+        var _a;
         return __awaiter(this, void 0, void 0, function* () {
             const workspaces = vscode.workspace.workspaceFolders;
             if (!workspaces)
                 return null;
-            const files = yield vscode.workspace.findFiles('**/system.yaml', '**/node_modules/**', 1);
-            if (files.length === 0)
-                return null;
             try {
-                const content = fs.readFileSync(files[0].fsPath, 'utf8');
+                const session = vscode.debug.activeDebugSession;
+                const activeSystemConfig = (session === null || session === void 0 ? void 0 : session.type) === 'labwired'
+                    ? (_a = session.configuration) === null || _a === void 0 ? void 0 : _a.systemConfig
+                    : undefined;
+                const systemConfigPath = (0, labConfig_1.resolveSystemConfigPath)(workspaces[0].uri.fsPath, activeSystemConfig);
+                if (!systemConfigPath || !fs.existsSync(systemConfigPath))
+                    return null;
+                const content = fs.readFileSync(systemConfigPath, 'utf8');
                 return this._parseYaml(content);
             }
             catch (e) {

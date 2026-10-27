@@ -13,6 +13,7 @@ exports.LabwiredCommandCenterProvider = void 0;
 const vscode = require("vscode");
 const path = require("path");
 const fs = require("fs");
+const labConfig_1 = require("./labConfig");
 class LabwiredCommandCenterProvider {
     constructor(_extensionUri, _demoUiEnabled) {
         this._extensionUri = _extensionUri;
@@ -23,6 +24,7 @@ class LabwiredCommandCenterProvider {
         this._pendingUartChunks = [];
     }
     resolveWebviewView(webviewView, context, _token) {
+        var _a;
         this._view = webviewView;
         webviewView.webview.onDidReceiveMessage(data => {
             switch (data.type) {
@@ -33,7 +35,7 @@ class LabwiredCommandCenterProvider {
                     vscode.commands.executeCommand('workbench.action.output.toggleOutput');
                     break;
                 case 'configureProject':
-                    vscode.commands.executeCommand('labwired.configureProject');
+                    vscode.commands.executeCommand('labwired.configureModel');
                     break;
                 case 'ready':
                     this._webviewReady = true;
@@ -50,13 +52,25 @@ class LabwiredCommandCenterProvider {
             ]
         };
         webviewView.webview.html = this._getHtmlForWebview(webviewView.webview);
-        // Watch for configuration changes (Board Logic)
-        const watcher = vscode.workspace.createFileSystemWatcher('**/system.yaml');
-        watcher.onDidChange(() => this.updateBoard());
-        watcher.onDidCreate(() => this.updateBoard());
+        // Model system files can have any name; lab.yaml identifies the selected file.
+        const watchers = [
+            vscode.workspace.createFileSystemWatcher('**/*.yaml'),
+            vscode.workspace.createFileSystemWatcher('**/*.yml'),
+        ];
+        const profileFolder = (_a = vscode.workspace.workspaceFolders) === null || _a === void 0 ? void 0 : _a[0];
+        if (profileFolder) {
+            watchers.push(vscode.workspace.createFileSystemWatcher(new vscode.RelativePattern(profileFolder, '.labwired/lab.yaml')));
+        }
+        for (const watcher of watchers) {
+            watcher.onDidChange(() => this.updateBoard());
+            watcher.onDidCreate(() => this.updateBoard());
+            watcher.onDidDelete(() => this.updateBoard());
+        }
+        const activeSessionWatcher = vscode.debug.onDidChangeActiveDebugSession(() => this.updateBoard());
         webviewView.onDidDispose(() => {
             this._webviewReady = false;
-            watcher.dispose();
+            watchers.forEach((watcher) => watcher.dispose());
+            activeSessionWatcher.dispose();
         });
         this.updateBoard();
     }
@@ -130,7 +144,6 @@ class LabwiredCommandCenterProvider {
             if (!workspaceFolders)
                 return;
             const rootPath = workspaceFolders[0].uri.fsPath;
-            const systemYamlPath = path.join(rootPath, 'system.yaml');
             const activeSystemConfig = (() => {
                 var _a;
                 const session = vscode.debug.activeDebugSession;
@@ -141,20 +154,10 @@ class LabwiredCommandCenterProvider {
             })();
             try {
                 let boardData;
-                if (activeSystemConfig && fs.existsSync(activeSystemConfig)) {
-                    const content = fs.readFileSync(activeSystemConfig, 'utf8');
+                const systemConfigPath = (0, labConfig_1.resolveSystemConfigPath)(rootPath, activeSystemConfig);
+                if (systemConfigPath && fs.existsSync(systemConfigPath)) {
+                    const content = fs.readFileSync(systemConfigPath, 'utf8');
                     boardData = this._parseSimpleYaml(content);
-                }
-                else if (fs.existsSync(systemYamlPath)) {
-                    const content = fs.readFileSync(systemYamlPath, 'utf8');
-                    boardData = this._parseSimpleYaml(content);
-                }
-                else {
-                    const files = yield vscode.workspace.findFiles('**/system.yaml', '**/node_modules/**', 1);
-                    if (files.length > 0) {
-                        const content = fs.readFileSync(files[0].fsPath, 'utf8');
-                        boardData = this._parseSimpleYaml(content);
-                    }
                 }
                 if (!boardData) {
                     boardData = {

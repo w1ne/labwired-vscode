@@ -10,20 +10,33 @@ Optionally connect **agent tools** (the same `labwired_*` MCP surface as the Pla
   `code --install-extension w1ne.labwired-vscode`
 - **VSCodium, Cursor, Windsurf, Theia** — search *LabWired*; the extension is
   published to Open VSX as well.
-- **Any editor, no registry** — download `labwired-vscode.vsix` from the
+- **Any editor, no registry** — download `labwired-vscode-<version>.vsix` from the
   [latest release](https://github.com/w1ne/labwired-vscode/releases/latest) and
   run *Extensions: Install from VSIX…*
 
-Linux, macOS and Windows, on Intel and Arm. The simulator and debug adapter
-download themselves on first use; nothing needs a Rust toolchain.
+For a downloaded VSIX, the CLI also works on Windows and Linux:
+
+- **Windows x64** — in PowerShell, run `code --install-extension .\labwired-vscode-<version>.vsix`.
+- **Linux x64 or ARM64** — run `code --install-extension ./labwired-vscode-<version>.vsix`.
+- **WSL** — open the project in a WSL window, then install the VSIX from the
+  Extensions view with **Install in WSL**. The extension and runtime run on the
+  Linux side of WSL.
+
+The runtime also supports macOS x64 and ARM64. It downloads the matching
+simulator and debug adapter on first use; a Rust toolchain is not needed for
+the standard adapter.
 
 ## Get started
 
 1. Install the extension.
 2. Open a firmware project and build it.
-3. Press **F5**.
+3. Run **LabWired: Configure Model** and select the model system YAML and
+   firmware ELF. The saved paths are relative to `.labwired/lab.yaml`.
+4. Press **F5**.
 
-No `launch.json` required: the extension resolves the ELF from `.labwired/lab.yaml` or discovers your build. The simulator and debug adapter download themselves on first use.
+No `launch.json` is required. F5 uses the selected firmware and system YAML
+from `.labwired/lab.yaml`. Without a custom adapter, the extension downloads
+the standard LabWired DAP runtime on first use.
 
 ## Agent tools (optional)
 
@@ -83,7 +96,27 @@ assertions:
 
 **LabWired: Run Test (lab.yaml)** runs the same `labwired test …` path CI uses, so the editor and CI cannot disagree.
 
-**LabWired: Configure Project…** generates `.labwired/lab.yaml`.
+**LabWired: Configure Model** selects the model YAML and firmware ELF and
+stores both paths relative to `.labwired/lab.yaml`. The topology and device
+views use the same model YAML as F5.
+
+Models that need a custom DAP can configure its executable and build command in
+the same profile. The build runs before every F5 launch, with arguments passed
+as an array (without a shell):
+
+```yaml
+debug:
+  adapter:
+    executable: ../target/release/labwired-pro-dap
+    build:
+      command: cargo
+      args: [build, -p, labwired-pro-dap, --release]
+      cwd: ..
+```
+
+The executable and working directory paths are also relative to `.labwired/`.
+Omit `debug.adapter` to use the standard LabWired DAP. **LabWired: Configure
+Project…** remains as an alias for the model setup flow.
 
 ## Sign in (optional)
 
@@ -99,7 +132,7 @@ Local simulation needs no account. Sign-in uses LabWired’s OAuth (Clerk-backed
 | `labwired.apiUrl` | API base (default `https://api.labwired.com`) |
 | `labwired.cliPath` | Use your own `labwired` binary |
 | `labwired.dapPath` | Use your own `labwired-dap` |
-| `labwired.cliVersion` | Release tag for auto-download |
+| `labwired.cliVersion` | Release tag for auto-download (default `v0.25.0`) |
 | `labwired.executionMode` | `local` or `docker` |
 
 ## Development

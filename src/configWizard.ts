@@ -6,71 +6,147 @@
 
 import * as vscode from 'vscode';
 import * as path from 'path';
-import { writeLabConfig } from './labConfig';
+import { findLabConfig, LabConfig, LabDebugAdapter, writeLabConfig } from './labConfig';
 
-export async function showConfigWizard(): Promise<void> {
-    const workspaceFolders = vscode.workspace.workspaceFolders;
-    if (!workspaceFolders) {
-        vscode.window.showErrorMessage("Please open a workspace folder first.");
+export async function showModelConfigWizard(): Promise<void> {
+    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+    if (!workspaceFolder) {
+        vscode.window.showErrorMessage('Please open a workspace folder first.');
         return;
     }
 
-    const rootPath = workspaceFolders[0].uri.fsPath;
+    const rootPath = workspaceFolder.uri.fsPath;
     const labDir = path.join(rootPath, '.labwired');
-
-    // 1. Pick the firmware ELF.
-    const elfFiles = await vscode.workspace.findFiles('**/target/**/debug/*', '**/node_modules/**');
-    const elfItems = elfFiles.map(f => ({
-        label: path.basename(f.fsPath),
-        description: vscode.workspace.asRelativePath(f),
-        uri: f
-    }));
-
-    let selectedElf: { uri: vscode.Uri } | undefined;
-    if (elfItems.length > 0) {
-        selectedElf = await vscode.window.showQuickPick(elfItems, {
-            placeHolder: 'Select firmware ELF file',
-            title: 'LabWired: Configure Project'
-        });
+    const relativePath = (absolutePath: string) =>
+        path.relative(labDir, absolutePath).split(path.sep).join('/');
+    const existingConfig = findLabConfig(rootPath);
+    if (existingConfig) {
+        const choice = await vscode.window.showWarningMessage(
+            'LabWired: .labwired/lab.yaml already exists. Replace this model profile?',
+            { modal: true },
+            'Replace Profile'
+        );
+        if (choice !== 'Replace Profile') return;
     }
 
-    if (!selectedElf) {
-        const manualPath = await vscode.window.showInputBox({
-            prompt: 'Enter path to firmware ELF file (relative to workspace root)',
-            placeHolder: 'e.g. target/thumbv7em-none-eabi/release/firmware',
-            title: 'LabWired: Configure Project'
+    const systemUris = await vscode.window.showOpenDialog({
+        canSelectFiles: true,
+        canSelectFolders: false,
+        canSelectMany: false,
+        filters: { 'System YAML': ['yaml', 'yml'] },
+        title: 'LabWired: Select Model System YAML',
+        openLabel: 'Select System YAML',
+    });
+    if (!systemUris?.[0]) return;
+
+    const firmwareUris = await vscode.window.showOpenDialog({
+        canSelectFiles: true,
+        canSelectFolders: false,
+        canSelectMany: false,
+        filters: { 'Firmware ELF': ['elf', 'out', 'bin', '*'] },
+        title: 'LabWired: Select Firmware ELF',
+        openLabel: 'Select Firmware',
+    });
+    if (!firmwareUris?.[0]) return;
+
+    let adapter: LabDebugAdapter | undefined;
+    const adapterChoice = await vscode.window.showQuickPick(
+        ['Use standard LabWired DAP', 'Configure custom DAP'],
+        {
+            title: 'LabWired: Configure Model',
+            placeHolder: 'Choose the debugger for this model',
+            ignoreFocusOut: true,
+        }
+    );
+    if (!adapterChoice) return;
+
+    if (adapterChoice === 'Configure custom DAP') {
+        const executableUris = await vscode.window.showOpenDialog({
+            canSelectFiles: true,
+            canSelectFolders: false,
+            canSelectMany: false,
+            filters: { 'Executable': ['*'] },
+            title: 'LabWired: Select Custom DAP Executable',
+            openLabel: 'Select Executable',
         });
-        if (!manualPath) return;
-        selectedElf = { uri: vscode.Uri.file(path.resolve(rootPath, manualPath)) };
+        if (!executableUris?.[0]) return;
+
+        const buildChoice = await vscode.window.showQuickPick(
+            ['Use prebuilt executable', 'Build before each F5'],
+            {
+                title: 'LabWired: Configure Model',
+                placeHolder: 'Choose whether LabWired should build the custom DAP before launch',
+                ignoreFocusOut: true,
+            }
+        );
+        if (!buildChoice) return;
+
+        let build: { command: string; args: string[]; cwd?: string } | undefined;
+        if (buildChoice === 'Build before each F5') {
+            const command = await vscode.window.showInputBox({
+                title: 'LabWired: Configure Custom DAP Build',
+                prompt: 'Build program to run (for example: cargo)',
+                placeHolder: 'cargo',
+                ignoreFocusOut: true,
+            });
+            if (!command?.trim()) return;
+
+            const argsText = await vscode.window.showInputBox({
+                title: 'LabWired: Configure Custom DAP Build',
+                prompt: 'Build arguments as a JSON array of strings',
+                value: '[]',
+                placeHolder: '["build", "--release"]',
+                ignoreFocusOut: true,
+            });
+            if (argsText === undefined) return;
+
+            let args: unknown;
+            try {
+                args = JSON.parse(argsText);
+            } catch {
+                vscode.window.showErrorMessage('LabWired: Build arguments must be a JSON array of strings.');
+                return;
+            }
+            if (!Array.isArray(args) || !args.every((arg) => typeof arg === 'string')) {
+                vscode.window.showErrorMessage('LabWired: Build arguments must be a JSON array of strings.');
+                return;
+            }
+
+            const cwdText = await vscode.window.showInputBox({
+                title: 'LabWired: Configure Custom DAP Build',
+                prompt: 'Working directory (absolute or relative to the project root)',
+                value: '.',
+                placeHolder: '.',
+                ignoreFocusOut: true,
+            });
+            if (cwdText === undefined) return;
+            const cwd = path.resolve(rootPath, cwdText.trim() || '.');
+            build = { command: command.trim(), args, cwd: relativePath(cwd) };
+        }
+
+        adapter = {
+            executable: relativePath(executableUris[0].fsPath),
+            ...(build ? { build } : {}),
+        };
     }
 
-    // 2. Detect an optional system.yaml at the workspace root.
-    const systemAbs = path.join(rootPath, 'system.yaml');
-    const hasSystemYaml = await fileExists(systemAbs);
-
-    // 3. Write .labwired/lab.yaml with inputs relative to .labwired/.
-    const cfg = {
+    const config: LabConfig = {
         schema_version: '1.0',
         inputs: {
-            firmware: path.relative(labDir, selectedElf.uri.fsPath),
-            ...(hasSystemYaml ? { system: path.relative(labDir, systemAbs) } : {}),
+            firmware: relativePath(firmwareUris[0].fsPath),
+            system: relativePath(systemUris[0].fsPath),
         },
+        ...(adapter ? { debug: { adapter } } : {}),
         limits: { max_steps: 100000 },
         assertions: [{ expected_stop_reason: 'max_steps' }],
     };
 
-    const written = writeLabConfig(rootPath, cfg);
+    const written = writeLabConfig(rootPath, config);
     vscode.window.showInformationMessage(`LabWired: Wrote ${vscode.workspace.asRelativePath(written)}`);
+}
 
-    // 4. Offer SVD Import (Asset Foundry).
-    const importSvd = await vscode.window.showQuickPick(['Yes', 'No'], {
-        placeHolder: 'Do you want to import chip peripherals (SVD) now?',
-        title: 'LabWired: Asset Foundry Setup'
-    });
-
-    if (importSvd === 'Yes') {
-        await importSvdWizard();
-    }
+export async function showConfigWizard(): Promise<void> {
+    return showModelConfigWizard();
 }
 
 async function fileExists(filePath: string): Promise<boolean> {

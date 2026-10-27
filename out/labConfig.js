@@ -5,7 +5,7 @@
 // This software is released under the MIT License.
 // See the LICENSE file in the project root for full license information.
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.migrateLabConfig = exports.writeLabConfig = exports.readLabConfig = exports.findLabConfig = exports.LAB_CONFIG_REL = void 0;
+exports.migrateLabConfig = exports.writeLabConfig = exports.resolveSystemConfigPath = exports.readLabConfig = exports.findLabConfig = exports.LAB_CONFIG_REL = void 0;
 const path = require("path");
 const fs = require("fs");
 const yaml = require("js-yaml");
@@ -18,9 +18,79 @@ function findLabConfig(root) {
 exports.findLabConfig = findLabConfig;
 function readLabConfig(file) {
     const raw = fs.readFileSync(file, 'utf8');
-    return yaml.load(raw);
+    const parsed = yaml.load(raw);
+    if (!isRecord(parsed)) {
+        throw new Error('lab.yaml must contain a YAML mapping.');
+    }
+    const config = parsed;
+    if (config.inputs !== undefined && !isRecord(config.inputs)) {
+        throw new Error('lab.yaml inputs must be a mapping.');
+    }
+    const inputs = (config.inputs || {});
+    for (const field of ['firmware', 'system']) {
+        const value = inputs[field];
+        if (value !== undefined && (typeof value !== 'string' || value.length === 0)) {
+            throw new Error(`lab.yaml inputs.${field} must be a non-empty path string.`);
+        }
+    }
+    if (config.debug !== undefined && !isRecord(config.debug)) {
+        throw new Error('lab.yaml debug must be a mapping.');
+    }
+    const debug = config.debug;
+    if ((debug === null || debug === void 0 ? void 0 : debug.adapter) !== undefined && !isRecord(debug.adapter)) {
+        throw new Error('lab.yaml debug.adapter must be a mapping.');
+    }
+    const adapter = debug === null || debug === void 0 ? void 0 : debug.adapter;
+    let resolvedAdapter;
+    if (adapter) {
+        if (adapter.build !== undefined && (typeof adapter.executable !== 'string' || adapter.executable.length === 0)) {
+            throw new Error('lab.yaml debug.adapter.executable is required when debug.adapter.build is configured.');
+        }
+        if (typeof adapter.executable !== 'string' || adapter.executable.length === 0) {
+            throw new Error('lab.yaml debug.adapter.executable must be a non-empty path string.');
+        }
+        let build;
+        if (adapter.build !== undefined) {
+            if (!isRecord(adapter.build)) {
+                throw new Error('lab.yaml debug.adapter.build must be a mapping.');
+            }
+            const rawBuild = adapter.build;
+            if (typeof rawBuild.command !== 'string' || rawBuild.command.length === 0) {
+                throw new Error('lab.yaml debug.adapter.build.command must be a non-empty program string.');
+            }
+            if (!Array.isArray(rawBuild.args) || !rawBuild.args.every((arg) => typeof arg === 'string')) {
+                throw new Error('lab.yaml debug.adapter.build.args must be an array of strings.');
+            }
+            if (rawBuild.cwd !== undefined && (typeof rawBuild.cwd !== 'string' || rawBuild.cwd.length === 0)) {
+                throw new Error('lab.yaml debug.adapter.build.cwd must be a non-empty path string.');
+            }
+            build = Object.assign({ command: rawBuild.command, args: rawBuild.args }, (typeof rawBuild.cwd === 'string' ? { cwd: resolveProfilePath(file, rawBuild.cwd) } : {}));
+        }
+        resolvedAdapter = Object.assign({ executable: resolveProfilePath(file, adapter.executable) }, (build ? { build } : {}));
+    }
+    return Object.assign(Object.assign(Object.assign({}, config), { inputs: Object.assign(Object.assign({}, (typeof inputs.firmware === 'string' ? { firmware: resolveProfilePath(file, inputs.firmware) } : {})), (typeof inputs.system === 'string' ? { system: resolveProfilePath(file, inputs.system) } : {})) }), (debug ? { debug: Object.assign({}, (resolvedAdapter ? { adapter: resolvedAdapter } : {})) } : {}));
 }
 exports.readLabConfig = readLabConfig;
+/** The active debug session wins; otherwise use the system selected in lab.yaml. */
+function resolveSystemConfigPath(root, activeDebugPath) {
+    var _a;
+    if (typeof activeDebugPath === 'string' && activeDebugPath.trim().length > 0) {
+        return path.isAbsolute(activeDebugPath)
+            ? activeDebugPath
+            : path.resolve(root, activeDebugPath);
+    }
+    const labConfigPath = findLabConfig(root);
+    if (!labConfigPath)
+        return undefined;
+    return (_a = readLabConfig(labConfigPath).inputs) === null || _a === void 0 ? void 0 : _a.system;
+}
+exports.resolveSystemConfigPath = resolveSystemConfigPath;
+function isRecord(value) {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+function resolveProfilePath(configFile, value) {
+    return path.isAbsolute(value) ? value : path.resolve(path.dirname(configFile), value);
+}
 function writeLabConfig(root, cfg) {
     const dir = path.join(root, '.labwired');
     fs.mkdirSync(dir, { recursive: true });

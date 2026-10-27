@@ -15,7 +15,7 @@ import { setBinarySource, type BinarySource } from './crashFingerprint';
 // The core release this extension downloads. Kept at the newest release on
 // purpose: pinning two releases back is how the debugger shipped against a CLI
 // that predated half the boards in the docs.
-export const CLI_VERSION = 'v0.22.0';
+export const CLI_VERSION = 'v0.25.0';
 
 /** The simulator/test-runner CLI. */
 export const CLI_BIN = 'labwired';

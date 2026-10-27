@@ -6,6 +6,7 @@
 
 import * as vscode from 'vscode';
 import * as path from 'path';
+import * as fs from 'fs';
 import { LabwiredCommandCenterProvider } from './commandCenter';
 import { TimelinePanel } from './timeline';
 import { PeripheralProvider } from './peripheralProvider';
@@ -18,16 +19,17 @@ import { ProfilingPanel } from './profilingPanel';
 import { SimulatorManager } from './simulatorManager';
 import { SystemTopologyPanel } from './topologyPanel';
 import { SimulatorViewProvider } from './simulatorView';
-import { showConfigWizard } from './configWizard';
+import { showModelConfigWizard } from './configWizard';
 import { resolveCli, resolveDap, runTest, CLI_BIN, DAP_BIN } from './cli';
 import { binarySourceOf } from './crashFingerprint';
 import { reportCrash } from './crashReport';
-import { findLabConfig, readLabConfig, migrateLabConfig } from './labConfig';
+import { findLabConfig, readLabConfig, migrateLabConfig, resolveSystemConfigPath, LabDebugAdapter } from './labConfig';
 import { bestFirmware } from './firmware';
 import { RegistersPanel } from './registersPanel';
 import { LabwiredAuthProvider, AUTH_ID, AUTH_LABEL, SCOPES } from './auth';
 import { configureAgentTools, copyClaudeMcpLine } from './mcpSetup';
 import { startOpenCodeAgent, copyAgentInstallCommand } from './openCodeAgent';
+import { customDapExecutablePath, runCustomDapBuild } from './customDap';
 
 type DebugEventLike = {
     session: { type: string };
@@ -157,19 +159,24 @@ export class LabwiredConfigurationProvider implements vscode.DebugConfigurationP
         if (labRoot) {
             const labConfigPath = findLabConfig(labRoot);
             if (labConfigPath) {
-                const labDir = path.join(labRoot, '.labwired');
                 try {
                     const lab = readLabConfig(labConfigPath);
                     if (!config.program && lab.inputs?.firmware) {
-                        config.program = path.resolve(labDir, lab.inputs.firmware);
+                        config.program = lab.inputs.firmware;
                         this.output.appendLine(`LabWired: Program from lab.yaml: ${config.program}`);
-                    }
-                    if (!config.systemConfig && lab.inputs?.system) {
-                        config.systemConfig = path.resolve(labDir, lab.inputs.system);
-                        this.output.appendLine(`LabWired: System config from lab.yaml: ${config.systemConfig}`);
                     }
                 } catch (e) {
                     this.output.appendLine(`LabWired: Failed to read lab.yaml: ${e}`);
+                }
+            }
+            if (!config.systemConfig) {
+                try {
+                    config.systemConfig = resolveSystemConfigPath(labRoot);
+                    if (config.systemConfig) {
+                        this.output.appendLine(`LabWired: System config from lab.yaml: ${config.systemConfig}`);
+                    }
+                } catch (e) {
+                    this.output.appendLine(`LabWired: Failed to read lab.yaml system input: ${e}`);
                 }
             }
         }
@@ -207,12 +214,12 @@ export class LabwiredConfigurationProvider implements vscode.DebugConfigurationP
             void vscode.window
                 .showErrorMessage(
                     'LabWired: no built firmware found. Build the project first, or set it up so LabWired knows which ELF to run.',
-                    'Set up LabWired',
+                    'Configure Model',
                     'Open Output'
                 )
                 .then((choice) => {
-                    if (choice === 'Set up LabWired') {
-                        return vscode.commands.executeCommand('labwired.configureProject');
+                    if (choice === 'Configure Model') {
+                        return vscode.commands.executeCommand('labwired.configureModel');
                     }
                     if (choice === 'Open Output') {
                         this.output.show();
@@ -220,6 +227,32 @@ export class LabwiredConfigurationProvider implements vscode.DebugConfigurationP
                     return undefined;
                 });
             return undefined; // abort launch
+        }
+
+        if (rootPath) {
+            let systemProblem: string | undefined;
+            if (!config.systemConfig) {
+                systemProblem = 'LabWired: no model system YAML is selected in .labwired/lab.yaml.';
+            } else if (!await this.checkFile(config.systemConfig)) {
+                systemProblem = `LabWired: model system YAML was not found at '${config.systemConfig}'.`;
+            }
+            if (systemProblem) {
+                this.output.appendLine(systemProblem);
+                void vscode.window.showErrorMessage(
+                    `${systemProblem} Configure a model before starting the debugger.`,
+                    'Configure Model',
+                    'Open Output'
+                ).then((choice) => {
+                    if (choice === 'Configure Model') {
+                        return vscode.commands.executeCommand('labwired.configureModel');
+                    }
+                    if (choice === 'Open Output') {
+                        this.output.show();
+                    }
+                    return undefined;
+                });
+                return undefined;
+            }
         }
 
         // Auto-detect Rust source for standard library to avoid "File not found" errors
@@ -254,6 +287,56 @@ export class LabwiredDebugAdapterDescriptorFactory implements vscode.DebugAdapte
 
     async createDebugAdapterDescriptor(session: vscode.DebugSession, executable: vscode.DebugAdapterExecutable | undefined): Promise<vscode.DebugAdapterDescriptor> {
         this.output.appendLine("LabWired: Creating Debug Adapter Descriptor...");
+
+        const workspaceFolder = session.workspaceFolder;
+        const modelConfigPath = workspaceFolder ? findLabConfig(workspaceFolder.uri.fsPath) : undefined;
+        if (modelConfigPath) {
+            let adapter: LabDebugAdapter | undefined;
+            try {
+                adapter = readLabConfig(modelConfigPath).debug?.adapter;
+            } catch (e) {
+                const message = e instanceof Error ? e.message : String(e);
+                this.output.appendLine(`LabWired: Failed to read model profile: ${message}`);
+                vscode.window.showErrorMessage(`LabWired: Could not read .labwired/lab.yaml. ${message}`);
+                throw e;
+            }
+
+            if (adapter) {
+                if (adapter.build) {
+                    try {
+                        const result = await runCustomDapBuild(adapter.build);
+                        if (result.stdout) this.output.append(result.stdout);
+                        if (result.stderr) this.output.append(result.stderr);
+                    } catch (e) {
+                        const message = e instanceof Error ? e.message : String(e);
+                        this.output.appendLine(message);
+                        this.output.show();
+                        vscode.window.showErrorMessage('LabWired: Custom DAP build failed. See the LabWired output for build output.');
+                        throw e;
+                    }
+                }
+
+                const dapPath = customDapExecutablePath(adapter.executable);
+                let isFile = false;
+                try {
+                    isFile = fs.statSync(dapPath).isFile();
+                    if (isFile && process.platform !== 'win32') {
+                        fs.accessSync(dapPath, fs.constants.X_OK);
+                    }
+                } catch {
+                    isFile = false;
+                }
+                if (!isFile) {
+                    const message = `LabWired: Custom DAP executable '${dapPath}' is missing or not runnable. Check debug.adapter.executable and its build command in .labwired/lab.yaml.`;
+                    this.output.appendLine(message);
+                    vscode.window.showErrorMessage(message);
+                    throw new Error(message);
+                }
+
+                this.output.appendLine(`LabWired: Using custom DAP binary at ${dapPath}`);
+                return new vscode.DebugAdapterExecutable(dapPath, []);
+            }
+        }
 
         // 1. Check User Config
         const config = vscode.workspace.getConfiguration('labwired');
@@ -474,7 +557,11 @@ function activateInner(context: vscode.ExtensionContext) {
     }));
 
     context.subscriptions.push(vscode.commands.registerCommand('labwired.configureProject', async () => {
-        await showConfigWizard();
+        await showModelConfigWizard();
+    }));
+
+    context.subscriptions.push(vscode.commands.registerCommand('labwired.configureModel', async () => {
+        await showModelConfigWizard();
     }));
 
     context.subscriptions.push(vscode.commands.registerCommand('labwired.importSvd', async () => {
@@ -715,11 +802,11 @@ async function compileAndRun(context: vscode.ExtensionContext, outputChannel: vs
     const migration = migrateLabConfig(rootPath);
     if (migration === 'none') {
         const choice = await vscode.window.showErrorMessage(
-            'LabWired: No .labwired/lab.yaml found and nothing to migrate. Configure the project?',
-            'Configure Project'
+            'LabWired: No .labwired/lab.yaml found and nothing to migrate. Configure a model?',
+            'Configure Model'
         );
-        if (choice === 'Configure Project') {
-            await vscode.commands.executeCommand('labwired.configureProject');
+        if (choice === 'Configure Model') {
+            await vscode.commands.executeCommand('labwired.configureModel');
         }
         return;
     }
