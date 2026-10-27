@@ -41,6 +41,7 @@ const auth_1 = require("./auth");
 const mcpSetup_1 = require("./mcpSetup");
 const openCodeAgent_1 = require("./openCodeAgent");
 const customDap_1 = require("./customDap");
+const workspaceSelection_1 = require("./workspaceSelection");
 function handleLabwiredDebugEvent(e, deps) {
     var _a, _b, _c;
     if (e.session.type !== 'labwired') {
@@ -477,8 +478,8 @@ function activateInner(context) {
         }
     }));
     context.subscriptions.push(vscode.commands.registerCommand('labwired.startSimulator', () => __awaiter(this, void 0, void 0, function* () {
-        const workspaceFolders = vscode.workspace.workspaceFolders;
-        if (!workspaceFolders || workspaceFolders.length === 0)
+        const workspaceFolder = (0, workspaceSelection_1.resolveModelWorkspaceFolder)();
+        if (!workspaceFolder)
             return;
         const activeSession = vscode.debug.activeDebugSession;
         const baseConfig = (activeSession === null || activeSession === void 0 ? void 0 : activeSession.type) === 'labwired' ? activeSession.configuration : undefined;
@@ -489,7 +490,7 @@ function activateInner(context) {
             request: 'launch',
             stopOnEntry: false
         };
-        const started = yield vscode.debug.startDebugging(workspaceFolders[0], debugConfig);
+        const started = yield vscode.debug.startDebugging(workspaceFolder, debugConfig);
         if (!started) {
             vscode.window.showErrorMessage('LabWired: Failed to start debug session.');
         }
@@ -656,11 +657,11 @@ function activateInner(context) {
 function compileAndRun(context, outputChannel, simulatorManager) {
     var _a;
     return __awaiter(this, void 0, void 0, function* () {
-        const workspaceFolders = vscode.workspace.workspaceFolders;
-        if (!workspaceFolders || workspaceFolders.length === 0) {
+        const workspaceFolder = (0, workspaceSelection_1.resolveCurrentModelWorkspaceFolder)();
+        if (!workspaceFolder) {
             throw new Error("No workspace folder open");
         }
-        const rootPath = workspaceFolders[0].uri.fsPath;
+        const rootPath = workspaceFolder.uri.fsPath;
         // 0. Stop simulator if running
         simulatorManager.stop();
         // 1. Detect project type. The build target triple comes from the project's own

@@ -30,7 +30,7 @@ import { LabwiredAuthProvider, AUTH_ID, AUTH_LABEL, SCOPES } from './auth';
 import { configureAgentTools, copyClaudeMcpLine } from './mcpSetup';
 import { startOpenCodeAgent, copyAgentInstallCommand } from './openCodeAgent';
 import { customDapExecutablePath, runCustomDapBuild } from './customDap';
-import { ModelWorkspaceTarget } from './workspaceSelection';
+import { ModelWorkspaceTarget, resolveCurrentModelWorkspaceFolder, resolveModelWorkspaceFolder } from './workspaceSelection';
 
 type DebugEventLike = {
     session: { type: string };
@@ -519,8 +519,8 @@ function activateInner(context: vscode.ExtensionContext) {
     }));
 
     context.subscriptions.push(vscode.commands.registerCommand('labwired.startSimulator', async () => {
-        const workspaceFolders = vscode.workspace.workspaceFolders;
-        if (!workspaceFolders || workspaceFolders.length === 0) return;
+        const workspaceFolder = resolveModelWorkspaceFolder();
+        if (!workspaceFolder) return;
 
         const activeSession = vscode.debug.activeDebugSession;
         const baseConfig = activeSession?.type === 'labwired' ? activeSession.configuration : undefined;
@@ -533,7 +533,7 @@ function activateInner(context: vscode.ExtensionContext) {
                 stopOnEntry: false
             };
 
-        const started = await vscode.debug.startDebugging(workspaceFolders[0], debugConfig);
+        const started = await vscode.debug.startDebugging(workspaceFolder, debugConfig);
         if (!started) {
             vscode.window.showErrorMessage('LabWired: Failed to start debug session.');
         }
@@ -748,12 +748,12 @@ function activateInner(context: vscode.ExtensionContext) {
 }
 
 async function compileAndRun(context: vscode.ExtensionContext, outputChannel: vscode.OutputChannel, simulatorManager: SimulatorManager) {
-    const workspaceFolders = vscode.workspace.workspaceFolders;
-    if (!workspaceFolders || workspaceFolders.length === 0) {
+    const workspaceFolder = resolveCurrentModelWorkspaceFolder();
+    if (!workspaceFolder) {
         throw new Error("No workspace folder open");
     }
 
-    const rootPath = workspaceFolders[0].uri.fsPath;
+    const rootPath = workspaceFolder.uri.fsPath;
 
     // 0. Stop simulator if running
     simulatorManager.stop();
