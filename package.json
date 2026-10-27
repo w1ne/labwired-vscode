@@ -355,7 +355,8 @@
     },
     "dependencies": {
         "js-yaml": "^4.3.2",
-        "tar-stream": "^2.2.0"
+        "tar-stream": "^2.2.0",
+        "yaml": "^2.9.1"
     },
     "icon": "media/icon.png",
     "keywords": [
