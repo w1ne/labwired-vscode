@@ -8,12 +8,15 @@ import * as path from 'path';
 import * as fs from 'fs';
 import * as crypto from 'crypto';
 import * as yaml from 'js-yaml';
+import * as YAML from 'yaml';
 
 export const LAB_CONFIG_REL = path.join('.labwired', 'lab.yaml');
 
 const LAB_PROFILE_SCHEMA = yaml.DEFAULT_SCHEMA.extend([
     new yaml.Type('!after_cycles', { kind: 'mapping', construct: (value: unknown) => value }),
     new yaml.Type('!at_start', { kind: 'scalar', construct: (value: unknown) => value }),
+    new yaml.Type('!on_write', { kind: 'mapping', construct: (value: unknown) => value }),
+    new yaml.Type('!on_read', { kind: 'mapping', construct: (value: unknown) => value }),
 ]);
 
 export interface LabDebugAdapter {
@@ -142,28 +145,16 @@ export async function createCoreCompatibleTestScript(labConfigPath: string): Pro
 }
 
 function removeTopLevelYamlEntries(source: string, keys: string[]): string {
-    const keysPattern = keys.map((key) => `(?:${key}|'${key}'|"${key}")`).join('|');
-    const keyLine = new RegExp(`^(?:\\uFEFF)?(?:${keysPattern})\\s*:`);
-    const lines = source.split('\n');
-    const output: string[] = [];
-    let skippingEntry = false;
-
-    for (const line of lines) {
-        if (skippingEntry) {
-            if (line.trim().length === 0) continue;
-            const indentation = line.match(/^[ \t]*/)?.[0].length ?? 0;
-            if (indentation > 0) continue;
-            skippingEntry = false;
-        }
-
-        if (keyLine.test(line)) {
-            skippingEntry = true;
-            continue;
-        }
-        output.push(line);
+    const document = YAML.parseDocument(source);
+    if (document.errors.length > 0) {
+        throw new Error(`Cannot create a core-compatible test script: ${document.errors[0].message}`);
     }
 
-    return output.join('\n');
+    if (document.contents instanceof YAML.YAMLMap) {
+        for (const key of keys) document.delete(key);
+    }
+
+    return document.toString();
 }
 
 /** The active debug session wins; otherwise use the system selected in lab.yaml. */

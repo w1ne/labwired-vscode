@@ -119,6 +119,29 @@ describe('model profile lab.yaml', () => {
         assert.strictEqual(profile.runner.executable, path.resolve(root, 'target/release/labwired-pro'));
         assert.strictEqual(profile.inputs.firmware, path.resolve(root, 'build/model.elf'));
     });
+    it('reads core fault triggers tagged on_write and on_read', () => {
+        fs.writeFileSync(configFile, [
+            'schema_version: "1.2"',
+            'inputs: {}',
+            'faults:',
+            '  - id: write_fault',
+            '    kind: missing_clock',
+            '    target: { peripheral: clock }',
+            '    trigger: !on_write { register: CTRL }',
+            '  - id: read_fault',
+            '    kind: missing_clock',
+            '    target: { peripheral: clock }',
+            '    trigger: !on_read { register: STAT }',
+            'runner:',
+            '  executable: ../target/release/labwired-pro',
+        ].join('\n'));
+        const profile = (0, labConfig_1.readLabConfig)(configFile);
+        assert.strictEqual(profile.runner.executable, path.resolve(root, 'target/release/labwired-pro'));
+        assert.deepStrictEqual(profile.faults.map((fault) => fault.trigger), [
+            { register: 'CTRL' },
+            { register: 'STAT' },
+        ]);
+    });
     it('rejects malformed runner profile fields', () => {
         fs.writeFileSync(configFile, 'schema_version: "1.0"\ninputs: {}\nrunner: []\n');
         assert.throws(() => (0, labConfig_1.readLabConfig)(configFile), /lab\.yaml runner must be a mapping/);
@@ -169,6 +192,63 @@ describe('model profile lab.yaml', () => {
         }
         finally {
             fs.rmSync(testScriptPath, { force: true });
+        }
+    }));
+    it('removes extension keys from an indented root mapping and preserves comments and blank lines', () => __awaiter(void 0, void 0, void 0, function* () {
+        const profile = [
+            '# profile header',
+            '',
+            '  schema_version: "1.2"',
+            '  inputs: {}',
+            '  debug:',
+            '    adapter:',
+            '      executable: ../target/model-dap',
+            '  runner:',
+            '    executable: ../target/release/labwired-pro',
+            '  # this comment describes the following core limit',
+            '  limits:',
+            '    max_steps: 5000',
+            '# profile footer',
+        ].join('\n') + '\n';
+        fs.writeFileSync(configFile, profile);
+        const module = require('../../labConfig');
+        const testScript = yield module.createCoreCompatibleTestScript(configFile);
+        try {
+            const serialized = fs.readFileSync(testScript, 'utf8');
+            const parsed = require('js-yaml').load(serialized);
+            assert.deepStrictEqual(parsed, {
+                schema_version: '1.2',
+                inputs: {},
+                limits: { max_steps: 5000 },
+            });
+            assert.ok(!serialized.includes('debug:'));
+            assert.ok(!serialized.includes('runner:'));
+            assert.ok(serialized.includes('# profile header'));
+            assert.ok(serialized.includes('# this comment describes the following core limit'));
+            assert.ok(serialized.includes('# profile footer'));
+            assert.ok(serialized.includes('# profile header\n\n'));
+        }
+        finally {
+            fs.rmSync(testScript, { force: true });
+        }
+    }));
+    it('removes extension keys from a flow-style root mapping', () => __awaiter(void 0, void 0, void 0, function* () {
+        const profile = '{ schema_version: "1.2", inputs: { firmware: ../build/model.elf }, debug: { adapter: { executable: ../target/model-dap } }, runner: { executable: ../target/release/labwired-pro }, limits: { max_steps: 5000 }, assertions: [] }\n';
+        fs.writeFileSync(configFile, profile);
+        const module = require('../../labConfig');
+        const testScript = yield module.createCoreCompatibleTestScript(configFile);
+        try {
+            const serialized = fs.readFileSync(testScript, 'utf8');
+            const parsed = require('js-yaml').load(serialized);
+            assert.deepStrictEqual(parsed, {
+                schema_version: '1.2',
+                inputs: { firmware: '../build/model.elf' },
+                limits: { max_steps: 5000 },
+                assertions: [],
+            });
+        }
+        finally {
+            fs.rmSync(testScript, { force: true });
         }
     }));
 });
