@@ -10,8 +10,12 @@ on:
 
 jobs:
   build:
-    name: Compile and unit-test
-    runs-on: ${{ fromJSON(vars.CI_RUNNER || '["ubuntu-latest"]') }}
+    name: Compile and unit-test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -38,6 +42,7 @@ jobs:
       # Publishing a .vsix that is missing its compiled output produces an
       # extension that installs and then silently does nothing.
       - name: Verify the package contains the compiled extension
+        shell: bash
         run: |
           npx @vscode/vsce ls --tree > package-contents.txt
           cat package-contents.txt
@@ -45,13 +50,18 @@ jobs:
             || { echo "::error::out/extension.js missing from the .vsix"; exit 1; }
 
       - uses: actions/upload-artifact@v4
+        if: matrix.os == 'ubuntu-latest'
         with:
           name: labwired-vscode-vsix
           path: labwired-vscode.vsix
 
   integration:
-    name: Extension host tests
-    runs-on: ${{ fromJSON(vars.CI_RUNNER || '["ubuntu-latest"]') }}
+    name: Extension host tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, ubuntu-24.04-arm, windows-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
 
@@ -64,5 +74,10 @@ jobs:
         run: npm ci
 
       # @vscode/test-electron downloads a real VS Code and needs a display.
-      - name: Run extension tests under Xvfb
+      - name: Run Linux extension tests under Xvfb
+        if: runner.os == 'Linux'
         run: xvfb-run -a npm test
+
+      - name: Run Windows extension tests
+        if: runner.os == 'Windows'
+        run: npm test
