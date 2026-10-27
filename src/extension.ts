@@ -30,6 +30,7 @@ import { LabwiredAuthProvider, AUTH_ID, AUTH_LABEL, SCOPES } from './auth';
 import { configureAgentTools, copyClaudeMcpLine } from './mcpSetup';
 import { startOpenCodeAgent, copyAgentInstallCommand } from './openCodeAgent';
 import { customDapExecutablePath, runCustomDapBuild } from './customDap';
+import { ModelWorkspaceTarget } from './workspaceSelection';
 
 type DebugEventLike = {
     session: { type: string };
@@ -219,7 +220,7 @@ export class LabwiredConfigurationProvider implements vscode.DebugConfigurationP
                 )
                 .then((choice) => {
                     if (choice === 'Configure Model') {
-                        return vscode.commands.executeCommand('labwired.configureModel');
+                        return vscode.commands.executeCommand('labwired.configureModel', folder);
                     }
                     if (choice === 'Open Output') {
                         this.output.show();
@@ -244,7 +245,7 @@ export class LabwiredConfigurationProvider implements vscode.DebugConfigurationP
                     'Open Output'
                 ).then((choice) => {
                     if (choice === 'Configure Model') {
-                        return vscode.commands.executeCommand('labwired.configureModel');
+                        return vscode.commands.executeCommand('labwired.configureModel', folder);
                     }
                     if (choice === 'Open Output') {
                         this.output.show();
@@ -556,12 +557,12 @@ function activateInner(context: vscode.ExtensionContext) {
         await vscode.commands.executeCommand('labwired.startSimulator');
     }));
 
-    context.subscriptions.push(vscode.commands.registerCommand('labwired.configureProject', async () => {
-        await showModelConfigWizard();
+    context.subscriptions.push(vscode.commands.registerCommand('labwired.configureProject', async (target?: ModelWorkspaceTarget) => {
+        await showModelConfigWizard(target);
     }));
 
-    context.subscriptions.push(vscode.commands.registerCommand('labwired.configureModel', async () => {
-        await showModelConfigWizard();
+    context.subscriptions.push(vscode.commands.registerCommand('labwired.configureModel', async (target?: ModelWorkspaceTarget) => {
+        await showModelConfigWizard(target);
     }));
 
     context.subscriptions.push(vscode.commands.registerCommand('labwired.importSvd', async () => {
@@ -806,7 +807,10 @@ async function compileAndRun(context: vscode.ExtensionContext, outputChannel: vs
             'Configure Model'
         );
         if (choice === 'Configure Model') {
-            await vscode.commands.executeCommand('labwired.configureModel');
+            await vscode.commands.executeCommand(
+                'labwired.configureModel',
+                vscode.workspace.getWorkspaceFolder(vscode.Uri.file(rootPath)),
+            );
         }
         return;
     }

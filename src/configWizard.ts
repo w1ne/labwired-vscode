@@ -7,9 +7,10 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import { findLabConfig, LabConfig, LabDebugAdapter, writeLabConfig } from './labConfig';
+import { ModelWorkspaceTarget, resolveCurrentModelWorkspaceFolder } from './workspaceSelection';
 
-export async function showModelConfigWizard(): Promise<void> {
-    const workspaceFolder = vscode.workspace.workspaceFolders?.[0];
+export async function showModelConfigWizard(target?: ModelWorkspaceTarget): Promise<void> {
+    const workspaceFolder = resolveCurrentModelWorkspaceFolder(target);
     if (!workspaceFolder) {
         vscode.window.showErrorMessage('Please open a workspace folder first.');
         return;
@@ -61,15 +62,38 @@ export async function showModelConfigWizard(): Promise<void> {
     if (!adapterChoice) return;
 
     if (adapterChoice === 'Configure custom DAP') {
-        const executableUris = await vscode.window.showOpenDialog({
-            canSelectFiles: true,
-            canSelectFolders: false,
-            canSelectMany: false,
-            filters: { 'Executable': ['*'] },
-            title: 'LabWired: Select Custom DAP Executable',
-            openLabel: 'Select Executable',
-        });
-        if (!executableUris?.[0]) return;
+        const executableSource = await vscode.window.showQuickPick(
+            ['Select existing executable', 'Enter executable path'],
+            {
+                title: 'LabWired: Configure Custom DAP',
+                placeHolder: 'Choose an existing executable or enter its future build output path',
+                ignoreFocusOut: true,
+            }
+        );
+        if (!executableSource) return;
+
+        let executablePath: string;
+        if (executableSource === 'Select existing executable') {
+            const executableUris = await vscode.window.showOpenDialog({
+                canSelectFiles: true,
+                canSelectFolders: false,
+                canSelectMany: false,
+                filters: { 'Executable': ['*'] },
+                title: 'LabWired: Select Custom DAP Executable',
+                openLabel: 'Select Executable',
+            });
+            if (!executableUris?.[0]) return;
+            executablePath = executableUris[0].fsPath;
+        } else {
+            const executableText = await vscode.window.showInputBox({
+                title: 'LabWired: Configure Custom DAP',
+                prompt: 'Executable path (absolute or relative to the project root)',
+                placeHolder: 'target/release/labwired-dap',
+                ignoreFocusOut: true,
+            });
+            if (executableText === undefined || !executableText.trim()) return;
+            executablePath = path.resolve(rootPath, executableText.trim());
+        }
 
         const buildChoice = await vscode.window.showQuickPick(
             ['Use prebuilt executable', 'Build before each F5'],
@@ -80,6 +104,11 @@ export async function showModelConfigWizard(): Promise<void> {
             }
         );
         if (!buildChoice) return;
+
+        if (buildChoice === 'Use prebuilt executable' && !await fileExists(executablePath)) {
+            vscode.window.showErrorMessage(`LabWired: Prebuilt custom DAP executable was not found at '${executablePath}'.`);
+            return;
+        }
 
         let build: { command: string; args: string[]; cwd?: string } | undefined;
         if (buildChoice === 'Build before each F5') {
@@ -125,7 +154,7 @@ export async function showModelConfigWizard(): Promise<void> {
         }
 
         adapter = {
-            executable: relativePath(executableUris[0].fsPath),
+            executable: relativePath(executablePath),
             ...(build ? { build } : {}),
         };
     }
@@ -151,8 +180,8 @@ export async function showConfigWizard(): Promise<void> {
 
 async function fileExists(filePath: string): Promise<boolean> {
     try {
-        await vscode.workspace.fs.stat(vscode.Uri.file(filePath));
-        return true;
+        const stat = await vscode.workspace.fs.stat(vscode.Uri.file(filePath));
+        return (stat.type & vscode.FileType.File) !== 0;
     } catch {
         return false;
     }

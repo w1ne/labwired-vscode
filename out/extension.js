@@ -197,7 +197,7 @@ class LabwiredConfigurationProvider {
                     .showErrorMessage('LabWired: no built firmware found. Build the project first, or set it up so LabWired knows which ELF to run.', 'Configure Model', 'Open Output')
                     .then((choice) => {
                     if (choice === 'Configure Model') {
-                        return vscode.commands.executeCommand('labwired.configureModel');
+                        return vscode.commands.executeCommand('labwired.configureModel', folder);
                     }
                     if (choice === 'Open Output') {
                         this.output.show();
@@ -218,7 +218,7 @@ class LabwiredConfigurationProvider {
                     this.output.appendLine(systemProblem);
                     void vscode.window.showErrorMessage(`${systemProblem} Configure a model before starting the debugger.`, 'Configure Model', 'Open Output').then((choice) => {
                         if (choice === 'Configure Model') {
-                            return vscode.commands.executeCommand('labwired.configureModel');
+                            return vscode.commands.executeCommand('labwired.configureModel', folder);
                         }
                         if (choice === 'Open Output') {
                             this.output.show();
@@ -509,11 +509,11 @@ function activateInner(context) {
         }
         yield vscode.commands.executeCommand('labwired.startSimulator');
     })));
-    context.subscriptions.push(vscode.commands.registerCommand('labwired.configureProject', () => __awaiter(this, void 0, void 0, function* () {
-        yield (0, configWizard_1.showModelConfigWizard)();
+    context.subscriptions.push(vscode.commands.registerCommand('labwired.configureProject', (target) => __awaiter(this, void 0, void 0, function* () {
+        yield (0, configWizard_1.showModelConfigWizard)(target);
     })));
-    context.subscriptions.push(vscode.commands.registerCommand('labwired.configureModel', () => __awaiter(this, void 0, void 0, function* () {
-        yield (0, configWizard_1.showModelConfigWizard)();
+    context.subscriptions.push(vscode.commands.registerCommand('labwired.configureModel', (target) => __awaiter(this, void 0, void 0, function* () {
+        yield (0, configWizard_1.showModelConfigWizard)(target);
     })));
     context.subscriptions.push(vscode.commands.registerCommand('labwired.importSvd', () => __awaiter(this, void 0, void 0, function* () {
         // Dynamic import to avoid circular dependencies if any, though explicit import is better
@@ -707,7 +707,7 @@ function compileAndRun(context, outputChannel, simulatorManager) {
         if (migration === 'none') {
             const choice = yield vscode.window.showErrorMessage('LabWired: No .labwired/lab.yaml found and nothing to migrate. Configure a model?', 'Configure Model');
             if (choice === 'Configure Model') {
-                yield vscode.commands.executeCommand('labwired.configureModel');
+                yield vscode.commands.executeCommand('labwired.configureModel', vscode.workspace.getWorkspaceFolder(vscode.Uri.file(rootPath)));
             }
             return;
         }

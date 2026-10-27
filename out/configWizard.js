@@ -18,10 +18,10 @@ exports.importSvdWizard = exports.showConfigWizard = exports.showModelConfigWiza
 const vscode = require("vscode");
 const path = require("path");
 const labConfig_1 = require("./labConfig");
-function showModelConfigWizard() {
-    var _a;
+const workspaceSelection_1 = require("./workspaceSelection");
+function showModelConfigWizard(target) {
     return __awaiter(this, void 0, void 0, function* () {
-        const workspaceFolder = (_a = vscode.workspace.workspaceFolders) === null || _a === void 0 ? void 0 : _a[0];
+        const workspaceFolder = (0, workspaceSelection_1.resolveCurrentModelWorkspaceFolder)(target);
         if (!workspaceFolder) {
             vscode.window.showErrorMessage('Please open a workspace folder first.');
             return;
@@ -64,16 +64,38 @@ function showModelConfigWizard() {
         if (!adapterChoice)
             return;
         if (adapterChoice === 'Configure custom DAP') {
-            const executableUris = yield vscode.window.showOpenDialog({
-                canSelectFiles: true,
-                canSelectFolders: false,
-                canSelectMany: false,
-                filters: { 'Executable': ['*'] },
-                title: 'LabWired: Select Custom DAP Executable',
-                openLabel: 'Select Executable',
+            const executableSource = yield vscode.window.showQuickPick(['Select existing executable', 'Enter executable path'], {
+                title: 'LabWired: Configure Custom DAP',
+                placeHolder: 'Choose an existing executable or enter its future build output path',
+                ignoreFocusOut: true,
             });
-            if (!(executableUris === null || executableUris === void 0 ? void 0 : executableUris[0]))
+            if (!executableSource)
                 return;
+            let executablePath;
+            if (executableSource === 'Select existing executable') {
+                const executableUris = yield vscode.window.showOpenDialog({
+                    canSelectFiles: true,
+                    canSelectFolders: false,
+                    canSelectMany: false,
+                    filters: { 'Executable': ['*'] },
+                    title: 'LabWired: Select Custom DAP Executable',
+                    openLabel: 'Select Executable',
+                });
+                if (!(executableUris === null || executableUris === void 0 ? void 0 : executableUris[0]))
+                    return;
+                executablePath = executableUris[0].fsPath;
+            }
+            else {
+                const executableText = yield vscode.window.showInputBox({
+                    title: 'LabWired: Configure Custom DAP',
+                    prompt: 'Executable path (absolute or relative to the project root)',
+                    placeHolder: 'target/release/labwired-dap',
+                    ignoreFocusOut: true,
+                });
+                if (executableText === undefined || !executableText.trim())
+                    return;
+                executablePath = path.resolve(rootPath, executableText.trim());
+            }
             const buildChoice = yield vscode.window.showQuickPick(['Use prebuilt executable', 'Build before each F5'], {
                 title: 'LabWired: Configure Model',
                 placeHolder: 'Choose whether LabWired should build the custom DAP before launch',
@@ -81,6 +103,10 @@ function showModelConfigWizard() {
             });
             if (!buildChoice)
                 return;
+            if (buildChoice === 'Use prebuilt executable' && !(yield fileExists(executablePath))) {
+                vscode.window.showErrorMessage(`LabWired: Prebuilt custom DAP executable was not found at '${executablePath}'.`);
+                return;
+            }
             let build;
             if (buildChoice === 'Build before each F5') {
                 const command = yield vscode.window.showInputBox({
@@ -104,7 +130,7 @@ function showModelConfigWizard() {
                 try {
                     args = JSON.parse(argsText);
                 }
-                catch (_b) {
+                catch (_a) {
                     vscode.window.showErrorMessage('LabWired: Build arguments must be a JSON array of strings.');
                     return;
                 }
@@ -124,7 +150,7 @@ function showModelConfigWizard() {
                 const cwd = path.resolve(rootPath, cwdText.trim() || '.');
                 build = { command: command.trim(), args, cwd: relativePath(cwd) };
             }
-            adapter = Object.assign({ executable: relativePath(executableUris[0].fsPath) }, (build ? { build } : {}));
+            adapter = Object.assign({ executable: relativePath(executablePath) }, (build ? { build } : {}));
         }
         const config = Object.assign(Object.assign({ schema_version: '1.0', inputs: {
                 firmware: relativePath(firmwareUris[0].fsPath),
@@ -144,8 +170,8 @@ exports.showConfigWizard = showConfigWizard;
 function fileExists(filePath) {
     return __awaiter(this, void 0, void 0, function* () {
         try {
-            yield vscode.workspace.fs.stat(vscode.Uri.file(filePath));
-            return true;
+            const stat = yield vscode.workspace.fs.stat(vscode.Uri.file(filePath));
+            return (stat.type & vscode.FileType.File) !== 0;
         }
         catch (_a) {
             return false;
