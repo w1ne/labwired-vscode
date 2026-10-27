@@ -34,6 +34,7 @@ function octal(value, width) {
     return Buffer.from(value.toString(8).padStart(width - 1, '0') + '\0');
 }
 function makeTar(entries) {
+    var _a;
     const blocks = [];
     for (const entry of entries) {
         const content = Buffer.from(entry.content || '', 'utf8');
@@ -42,7 +43,7 @@ function makeTar(entries) {
         octal(0o644, 8).copy(header, 100);
         octal(0, 8).copy(header, 108);
         octal(0, 8).copy(header, 116);
-        octal(entry.type === '5' ? 0 : content.length, 12).copy(header, 124);
+        octal((_a = entry.size) !== null && _a !== void 0 ? _a : (entry.type === '5' ? 0 : content.length), 12).copy(header, 124);
         octal(0, 12).copy(header, 136);
         header.fill(0x20, 148, 156);
         header.write(entry.type || '0', 156, 1, 'ascii');
@@ -198,6 +199,21 @@ describe('model catalog installer', function () {
             yield server.close();
         }
     }));
+    it('rejects colon-bearing paths before extraction for cross-platform safety', () => __awaiter(this, void 0, void 0, function* () {
+        const archive = makeTar([
+            { name: 'configs/chips/alpha.yaml', content: 'name: alpha\n' },
+            { name: 'configs/chips/alpha.yaml:payload', content: 'not a portable file\n' },
+        ]);
+        const server = yield startCatalogServer({ archive });
+        try {
+            const root = makeRoot();
+            yield assert.rejects(catalogModule.installCatalog(root, noProgress, activeToken, server.baseUrl), /unsafe|path/i);
+            assert.deepStrictEqual(fs.readdirSync(path.join(root, '.labwired', 'models')), []);
+        }
+        finally {
+            yield server.close();
+        }
+    }));
     it('rejects links in the archive', () => __awaiter(this, void 0, void 0, function* () {
         const archive = makeTar([
             { name: 'configs/chips/alpha.yaml', content: 'name: alpha\n' },
@@ -207,6 +223,21 @@ describe('model catalog installer', function () {
         try {
             const root = makeRoot();
             yield assert.rejects(catalogModule.installCatalog(root, noProgress, activeToken, server.baseUrl), /link|unsafe|entry/i);
+        }
+        finally {
+            yield server.close();
+        }
+    }));
+    it('rejects directory entries that carry file payload data', () => __awaiter(this, void 0, void 0, function* () {
+        const archive = makeTar([
+            { name: 'configs', type: '5', content: 'unexpected payload', size: 18 },
+            { name: 'configs/chips/alpha.yaml', content: 'name: alpha\n' },
+        ]);
+        const server = yield startCatalogServer({ archive });
+        try {
+            const root = makeRoot();
+            yield assert.rejects(catalogModule.installCatalog(root, noProgress, activeToken, server.baseUrl), /directory|unsafe|entry/i);
+            assert.deepStrictEqual(fs.readdirSync(path.join(root, '.labwired', 'models')), []);
         }
         finally {
             yield server.close();

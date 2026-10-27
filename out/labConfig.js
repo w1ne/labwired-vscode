@@ -4,12 +4,26 @@
 //
 // This software is released under the MIT License.
 // See the LICENSE file in the project root for full license information.
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.migrateLabConfig = exports.writeLabConfig = exports.resolveSystemConfigPath = exports.readLabConfig = exports.findLabConfig = exports.LAB_CONFIG_REL = void 0;
+exports.migrateLabConfig = exports.writeLabConfig = exports.resolveProfileExecutablePath = exports.resolveSystemConfigPath = exports.createCoreCompatibleTestScript = exports.readLabConfig = exports.findLabConfig = exports.LAB_CONFIG_REL = void 0;
 const path = require("path");
 const fs = require("fs");
+const crypto = require("crypto");
 const yaml = require("js-yaml");
 exports.LAB_CONFIG_REL = path.join('.labwired', 'lab.yaml');
+const LAB_PROFILE_SCHEMA = yaml.DEFAULT_SCHEMA.extend([
+    new yaml.Type('!after_cycles', { kind: 'mapping', construct: (value) => value }),
+    new yaml.Type('!at_start', { kind: 'scalar', construct: (value) => value }),
+]);
 // Returns the canonical lab.yaml path if it exists, else undefined. No search, no scoring.
 function findLabConfig(root) {
     const canonical = path.join(root, exports.LAB_CONFIG_REL);
@@ -18,7 +32,7 @@ function findLabConfig(root) {
 exports.findLabConfig = findLabConfig;
 function readLabConfig(file) {
     const raw = fs.readFileSync(file, 'utf8');
-    const parsed = yaml.load(raw);
+    const parsed = yaml.load(raw, { schema: LAB_PROFILE_SCHEMA });
     if (!isRecord(parsed)) {
         throw new Error('lab.yaml must contain a YAML mapping.');
     }
@@ -36,7 +50,11 @@ function readLabConfig(file) {
     if (config.debug !== undefined && !isRecord(config.debug)) {
         throw new Error('lab.yaml debug must be a mapping.');
     }
+    if (config.runner !== undefined && !isRecord(config.runner)) {
+        throw new Error('lab.yaml runner must be a mapping.');
+    }
     const debug = config.debug;
+    const runner = config.runner;
     if ((debug === null || debug === void 0 ? void 0 : debug.adapter) !== undefined && !isRecord(debug.adapter)) {
         throw new Error('lab.yaml debug.adapter must be a mapping.');
     }
@@ -68,9 +86,53 @@ function readLabConfig(file) {
         }
         resolvedAdapter = Object.assign({ executable: resolveProfilePath(file, adapter.executable) }, (build ? { build } : {}));
     }
-    return Object.assign(Object.assign(Object.assign({}, config), { inputs: Object.assign(Object.assign({}, (typeof inputs.firmware === 'string' ? { firmware: resolveProfilePath(file, inputs.firmware) } : {})), (typeof inputs.system === 'string' ? { system: resolveProfilePath(file, inputs.system) } : {})) }), (debug ? { debug: Object.assign({}, (resolvedAdapter ? { adapter: resolvedAdapter } : {})) } : {}));
+    let resolvedRunner;
+    if (runner) {
+        const executable = runner.executable;
+        if (typeof executable !== 'string' || executable.trim().length === 0) {
+            throw new Error('lab.yaml runner.executable must be a non-empty path string.');
+        }
+        resolvedRunner = { executable: resolveProfileExecutablePath(file, executable) };
+    }
+    return Object.assign(Object.assign(Object.assign(Object.assign({}, config), { inputs: Object.assign(Object.assign({}, (typeof inputs.firmware === 'string' ? { firmware: resolveProfilePath(file, inputs.firmware) } : {})), (typeof inputs.system === 'string' ? { system: resolveProfilePath(file, inputs.system) } : {})) }), (debug ? { debug: Object.assign({}, (resolvedAdapter ? { adapter: resolvedAdapter } : {})) } : {})), (runner ? { runner: resolvedRunner } : {}));
 }
 exports.readLabConfig = readLabConfig;
+/** Create a disposable core TestScript copy without extension-only debugger settings. */
+function createCoreCompatibleTestScript(labConfigPath) {
+    return __awaiter(this, void 0, void 0, function* () {
+        const raw = yield fs.promises.readFile(labConfigPath, 'utf8');
+        const coreScript = removeTopLevelYamlEntries(raw, ['debug', 'runner']);
+        const parent = path.dirname(labConfigPath);
+        const tempPath = path.join(parent, `.labwired-test-${process.pid}-${crypto.randomBytes(12).toString('hex')}.yaml`);
+        yield fs.promises.writeFile(tempPath, coreScript, { flag: 'wx', mode: 0o600 });
+        return tempPath;
+    });
+}
+exports.createCoreCompatibleTestScript = createCoreCompatibleTestScript;
+function removeTopLevelYamlEntries(source, keys) {
+    var _a, _b;
+    const keysPattern = keys.map((key) => `(?:${key}|'${key}'|"${key}")`).join('|');
+    const keyLine = new RegExp(`^(?:\\uFEFF)?(?:${keysPattern})\\s*:`);
+    const lines = source.split('\n');
+    const output = [];
+    let skippingEntry = false;
+    for (const line of lines) {
+        if (skippingEntry) {
+            if (line.trim().length === 0)
+                continue;
+            const indentation = (_b = (_a = line.match(/^[ \t]*/)) === null || _a === void 0 ? void 0 : _a[0].length) !== null && _b !== void 0 ? _b : 0;
+            if (indentation > 0)
+                continue;
+            skippingEntry = false;
+        }
+        if (keyLine.test(line)) {
+            skippingEntry = true;
+            continue;
+        }
+        output.push(line);
+    }
+    return output.join('\n');
+}
 /** The active debug session wins; otherwise use the system selected in lab.yaml. */
 function resolveSystemConfigPath(root, activeDebugPath) {
     var _a;
@@ -88,6 +150,14 @@ exports.resolveSystemConfigPath = resolveSystemConfigPath;
 function isRecord(value) {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
+function resolveProfileExecutablePath(configFile, value, platform = process.platform) {
+    const resolvedPath = resolveProfilePath(configFile, value);
+    if (platform === 'win32' && path.extname(resolvedPath).length === 0 && fs.existsSync(`${resolvedPath}.exe`)) {
+        return `${resolvedPath}.exe`;
+    }
+    return resolvedPath;
+}
+exports.resolveProfileExecutablePath = resolveProfileExecutablePath;
 function resolveProfilePath(configFile, value) {
     return path.isAbsolute(value) ? value : path.resolve(path.dirname(configFile), value);
 }

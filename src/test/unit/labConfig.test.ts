@@ -92,4 +92,100 @@ describe('model profile lab.yaml', () => {
             path.resolve(root, 'crates/chips/k32w041z-system.yaml')
         );
     });
+
+    it('resolves the optional runner relative to lab.yaml and uses its Windows executable suffix', () => {
+        fs.writeFileSync(configFile, [
+            'schema_version: "1.0"',
+            'inputs: {}',
+            'runner:',
+            '  executable: ../target/release/labwired-pro',
+        ].join('\n'));
+        const runnerPath = path.resolve(root, 'target', 'release', 'labwired-pro');
+        fs.mkdirSync(path.dirname(runnerPath), { recursive: true });
+        fs.writeFileSync(`${runnerPath}.exe`, 'runner');
+
+        const profile = readLabConfig(configFile) as any;
+        assert.strictEqual(profile.runner.executable, runnerPath);
+        assert.strictEqual(
+            require('../../labConfig').resolveProfileExecutablePath(configFile, '../target/release/labwired-pro', 'win32'),
+            `${runnerPath}.exe`
+        );
+    });
+
+    it('reads extension profile fields from core scripts with custom stimulus tags', () => {
+        fs.writeFileSync(configFile, [
+            'schema_version: "1.2"',
+            'inputs:',
+            '  firmware: ../build/model.elf',
+            'limits:',
+            '  max_steps: 5000',
+            'stimuli:',
+            '  - target: { component: drive_motor, channel: stall }',
+            '    trigger: !after_cycles { cycles: 100 }',
+            '    value: 1.0',
+            'runner:',
+            '  executable: ../target/release/labwired-pro',
+        ].join('\n'));
+
+        const profile = readLabConfig(configFile) as any;
+        assert.strictEqual(profile.runner.executable, path.resolve(root, 'target/release/labwired-pro'));
+        assert.strictEqual(profile.inputs.firmware, path.resolve(root, 'build/model.elf'));
+    });
+
+    it('rejects malformed runner profile fields', () => {
+        fs.writeFileSync(configFile, 'schema_version: "1.0"\ninputs: {}\nrunner: []\n');
+        assert.throws(() => readLabConfig(configFile), /lab\.yaml runner must be a mapping/);
+
+        fs.writeFileSync(configFile, 'schema_version: "1.0"\ninputs: {}\nrunner:\n  executable: 42\n');
+        assert.throws(() => readLabConfig(configFile), /runner\.executable/);
+    });
+
+    it('removes extension-only fields while preserving the core script verbatim', async () => {
+        const corePrefix = [
+            'schema_version: "1.2"',
+            'inputs:',
+            '  firmware: ../build/model.elf',
+            '  system: ../configs/system.yaml',
+            'limits:',
+            '  max_steps: 5000',
+            '  max_cycles: 2500',
+            'assertions:',
+            '  - expected_stop_reason: max_steps',
+        ].join('\n') + '\n';
+        const extensionFields = [
+            'debug:',
+            '  adapter:',
+            '    executable: ../target/model-dap',
+            'runner:',
+            '  executable: ../target/release/labwired-pro',
+        ].join('\n') + '\n';
+        const coreSuffix = [
+            'stack_paint: false',
+            'faults: []',
+            'verdict: null',
+            'stimuli:',
+            '  - target:',
+            '      component: drive_motor',
+            '      channel: stall',
+            '    trigger: !after_cycles { cycles: 100 }',
+            '    value: 1.0',
+        ].join('\n') + '\n';
+        const profile = `${corePrefix}${extensionFields}${coreSuffix}`;
+        const coreTestScript = `${corePrefix}${coreSuffix}`;
+        fs.writeFileSync(configFile, profile);
+        const labConfigModule = require('../../labConfig') as {
+            createCoreCompatibleTestScript?: (labConfigPath: string) => Promise<string>;
+        };
+
+        assert.strictEqual(typeof labConfigModule.createCoreCompatibleTestScript, 'function');
+        const testScriptPath = await labConfigModule.createCoreCompatibleTestScript!(configFile);
+        try {
+            assert.notStrictEqual(testScriptPath, configFile);
+            assert.strictEqual(path.dirname(testScriptPath), path.dirname(configFile));
+            assert.strictEqual(fs.readFileSync(testScriptPath, 'utf8'), coreTestScript);
+            assert.strictEqual(fs.readFileSync(configFile, 'utf8'), profile);
+        } finally {
+            fs.rmSync(testScriptPath, { force: true });
+        }
+    });
 });
