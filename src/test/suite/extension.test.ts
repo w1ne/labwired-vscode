@@ -33,6 +33,7 @@ suite('Extension Test Suite', () => {
 
         const commands = await vscode.commands.getCommands(true);
         assert.ok(commands.includes('labwired.compileAndRun'));
+        assert.ok(commands.includes('labwired.configureModel'));
         assert.ok(commands.includes('labwired.showDashboard'));
         assert.ok(commands.includes('labwired.showRegisters'));
     });

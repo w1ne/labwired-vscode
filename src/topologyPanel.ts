@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
+import { resolveSystemConfigPath } from './labConfig';
 
 export class SystemTopologyPanel {
     public static currentPanel: SystemTopologyPanel | undefined;
@@ -39,9 +40,23 @@ export class SystemTopologyPanel {
 
         this._panel.onDidDispose(() => this.dispose(), null, this._disposables);
 
-        const watcher = vscode.workspace.createFileSystemWatcher('**/system.yaml');
-        watcher.onDidChange(() => this._update());
-        this._disposables.push(watcher);
+        const watchers = [
+            vscode.workspace.createFileSystemWatcher('**/*.yaml'),
+            vscode.workspace.createFileSystemWatcher('**/*.yml'),
+        ];
+        const profileFolder = vscode.workspace.workspaceFolders?.[0];
+        if (profileFolder) {
+            watchers.push(vscode.workspace.createFileSystemWatcher(
+                new vscode.RelativePattern(profileFolder, '.labwired/lab.yaml')
+            ));
+        }
+        for (const watcher of watchers) {
+            watcher.onDidChange(() => this._update());
+            watcher.onDidCreate(() => this._update());
+            watcher.onDidDelete(() => this._update());
+            this._disposables.push(watcher);
+        }
+        this._disposables.push(vscode.debug.onDidChangeActiveDebugSession(() => this._update()));
     }
 
     public sendTelemetry(data: any) {
@@ -71,11 +86,14 @@ export class SystemTopologyPanel {
         const workspaces = vscode.workspace.workspaceFolders;
         if (!workspaces) return null;
 
-        const files = await vscode.workspace.findFiles('**/system.yaml', '**/node_modules/**', 1);
-        if (files.length === 0) return null;
-
         try {
-            const content = fs.readFileSync(files[0].fsPath, 'utf8');
+            const session = vscode.debug.activeDebugSession;
+            const activeSystemConfig = session?.type === 'labwired'
+                ? session.configuration?.systemConfig
+                : undefined;
+            const systemConfigPath = resolveSystemConfigPath(workspaces[0].uri.fsPath, activeSystemConfig);
+            if (!systemConfigPath || !fs.existsSync(systemConfigPath)) return null;
+            const content = fs.readFileSync(systemConfigPath, 'utf8');
             return this._parseYaml(content);
         } catch (e) {
             return null;

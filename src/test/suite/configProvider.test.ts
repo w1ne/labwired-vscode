@@ -65,6 +65,36 @@ suite('LabwiredConfigurationProvider Test Suite', () => {
         }
     });
 
+    test('resolveDebugConfiguration offers Configure Model when no system profile is selected', async () => {
+        const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'lw-cfg-no-system-'));
+        const firmware = path.join(tmp, 'firmware.elf');
+        fs.writeFileSync(firmware, 'firmware');
+        const originalErrorMessage = vscode.window.showErrorMessage;
+        let prompt = '';
+        let actions: string[] = [];
+        try {
+            (vscode.window as any).showErrorMessage = async (message: string, ...items: string[]) => {
+                prompt = message;
+                actions = items;
+                return undefined;
+            };
+            const provider = new LabwiredConfigurationProvider(mockOutputChannel, mockCpModule, async () => true);
+            const config: vscode.DebugConfiguration = {
+                type: 'labwired', name: 'missing model profile', request: 'launch', program: firmware,
+            };
+            const mockFolder = { uri: vscode.Uri.file(tmp), name: 'mock', index: 0 } as vscode.WorkspaceFolder;
+
+            const resolved = await provider.resolveDebugConfiguration(mockFolder, config);
+
+            assert.strictEqual(resolved, undefined);
+            assert.match(prompt, /model system YAML/i);
+            assert.ok(actions.includes('Configure Model'));
+        } finally {
+            (vscode.window as any).showErrorMessage = originalErrorMessage;
+            fs.rmSync(tmp, { recursive: true, force: true });
+        }
+    });
+
     test('resolveDebugConfiguration should auto-map Rust source', async () => {
         const provider = new LabwiredConfigurationProvider(mockOutputChannel, mockCpModule, mockCheckFile);
         const config: vscode.DebugConfiguration = {

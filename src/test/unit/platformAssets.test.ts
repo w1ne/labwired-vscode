@@ -18,6 +18,12 @@ describe('release assets per platform', () => {
     it('names assets the way the release workflow does', () => {
         assert.strictEqual(assetFor('darwin', 'arm64'), 'darwin-aarch64');
         assert.strictEqual(assetFor('linux', 'x64'), 'linux-x86_64');
+        assert.strictEqual(assetFor('linux', 'arm64'), 'linux-aarch64');
+    });
+
+    it('supports the Linux extension host used by WSL', () => {
+        assert.strictEqual(assetFor('linux', 'x64'), 'linux-x86_64');
+        assert.strictEqual(assetFor('linux', 'arm64'), 'linux-aarch64');
     });
 
     it('says nothing rather than guessing for a machine we do not publish for', () => {

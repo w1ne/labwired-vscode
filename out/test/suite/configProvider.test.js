@@ -70,6 +70,34 @@ suite('LabwiredConfigurationProvider Test Suite', () => {
             fs.rmSync(tmp, { recursive: true, force: true });
         }
     }));
+    test('resolveDebugConfiguration offers Configure Model when no system profile is selected', () => __awaiter(void 0, void 0, void 0, function* () {
+        const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'lw-cfg-no-system-'));
+        const firmware = path.join(tmp, 'firmware.elf');
+        fs.writeFileSync(firmware, 'firmware');
+        const originalErrorMessage = vscode.window.showErrorMessage;
+        let prompt = '';
+        let actions = [];
+        try {
+            vscode.window.showErrorMessage = (message, ...items) => __awaiter(void 0, void 0, void 0, function* () {
+                prompt = message;
+                actions = items;
+                return undefined;
+            });
+            const provider = new extension_1.LabwiredConfigurationProvider(mockOutputChannel, mockCpModule, () => __awaiter(void 0, void 0, void 0, function* () { return true; }));
+            const config = {
+                type: 'labwired', name: 'missing model profile', request: 'launch', program: firmware,
+            };
+            const mockFolder = { uri: vscode.Uri.file(tmp), name: 'mock', index: 0 };
+            const resolved = yield provider.resolveDebugConfiguration(mockFolder, config);
+            assert.strictEqual(resolved, undefined);
+            assert.match(prompt, /model system YAML/i);
+            assert.ok(actions.includes('Configure Model'));
+        }
+        finally {
+            vscode.window.showErrorMessage = originalErrorMessage;
+            fs.rmSync(tmp, { recursive: true, force: true });
+        }
+    }));
     test('resolveDebugConfiguration should auto-map Rust source', () => __awaiter(void 0, void 0, void 0, function* () {
         const provider = new extension_1.LabwiredConfigurationProvider(mockOutputChannel, mockCpModule, mockCheckFile);
         const config = {
