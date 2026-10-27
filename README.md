@@ -18,9 +18,9 @@ For a downloaded VSIX, the CLI also works on Windows and Linux:
 
 - **Windows x64** — in PowerShell, run `code --install-extension .\labwired-vscode-<version>.vsix`.
 - **Linux x64 or ARM64** — run `code --install-extension ./labwired-vscode-<version>.vsix`.
-- **WSL** — open the project in a WSL window, then install the VSIX from the
-  Extensions view with **Install in WSL**. The extension and runtime run on the
-  Linux side of WSL.
+- **WSL / CowManager** — open the CowManager folder through **Remote - WSL**, then
+  install LabWired in the WSL extension group (for example, **Install in WSL:
+  Ubuntu**). The extension and debugger run on Linux beside the project files.
 
 The runtime also supports macOS x64 and ARM64. It downloads the matching
 simulator and debug adapter on first use; a Rust toolchain is not needed for
@@ -30,8 +30,10 @@ the standard adapter.
 
 1. Install the extension.
 2. Open a firmware project and build it.
-3. Run **LabWired: Configure Model** and select the model system YAML and
-   firmware ELF. The saved paths are relative to `.labwired/lab.yaml`.
+3. Run **LabWired: Configure Model**, choose a model from the LabWired catalog
+   or select a local system YAML, then select the firmware ELF. The catalog
+   download contains only public core config files; firmware is selected
+   separately. The saved paths are relative to `.labwired/lab.yaml`.
 4. Press **F5**.
 
 No `launch.json` is required. F5 uses the selected firmware and system YAML

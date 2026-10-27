@@ -20,6 +20,7 @@ const path = require("path");
 const labConfig_1 = require("./labConfig");
 const workspaceSelection_1 = require("./workspaceSelection");
 const customDap_1 = require("./customDap");
+const modelCatalog_1 = require("./modelCatalog");
 function showModelConfigWizard(target) {
     return __awaiter(this, void 0, void 0, function* () {
         const workspaceFolder = (0, workspaceSelection_1.resolveCurrentModelWorkspaceFolder)(target);
@@ -36,15 +37,57 @@ function showModelConfigWizard(target) {
             if (choice !== 'Replace Profile')
                 return;
         }
-        const systemUris = yield vscode.window.showOpenDialog({
-            canSelectFiles: true,
-            canSelectFolders: false,
-            canSelectMany: false,
-            filters: { 'System YAML': ['yaml', 'yml'] },
-            title: 'LabWired: Select Model System YAML',
-            openLabel: 'Select System YAML',
+        const sourceChoice = yield vscode.window.showQuickPick(['Choose from LabWired catalog', 'Select local model YAML'], {
+            title: 'LabWired: Configure Model',
+            placeHolder: 'Choose a model source',
+            ignoreFocusOut: true,
         });
-        if (!(systemUris === null || systemUris === void 0 ? void 0 : systemUris[0]))
+        if (!sourceChoice)
+            return;
+        let systemPath;
+        if (sourceChoice === 'Choose from LabWired catalog') {
+            let catalog;
+            try {
+                catalog = yield vscode.window.withProgress({
+                    location: vscode.ProgressLocation.Notification,
+                    title: 'LabWired: Loading model catalog',
+                    cancellable: true,
+                }, (progress, token) => (0, modelCatalog_1.installCatalog)(rootPath, progress, token));
+            }
+            catch (error) {
+                if (!isCancellationError(error)) {
+                    vscode.window.showErrorMessage(`LabWired: Could not load the model catalog. ${errorMessage(error)}`);
+                }
+                const fallback = yield vscode.window.showQuickPick(['Select local YAML', 'Cancel'], {
+                    title: 'LabWired: Model catalog unavailable',
+                    placeHolder: 'Select a local system YAML instead, or cancel',
+                    ignoreFocusOut: true,
+                });
+                if (fallback !== 'Select local YAML')
+                    return;
+                systemPath = yield selectLocalSystemYaml();
+            }
+            if (catalog) {
+                const chip = yield vscode.window.showQuickPick(catalog.chips, {
+                    title: 'LabWired: Choose a Model',
+                    placeHolder: 'Select a chip from the public core catalog',
+                    ignoreFocusOut: true,
+                });
+                if (!chip)
+                    return;
+                try {
+                    systemPath = yield (0, modelCatalog_1.findOrCreateSystemYaml)(catalog, chip);
+                }
+                catch (error) {
+                    vscode.window.showErrorMessage(`LabWired: Could not resolve the catalog model. ${errorMessage(error)}`);
+                    return;
+                }
+            }
+        }
+        else {
+            systemPath = yield selectLocalSystemYaml();
+        }
+        if (!systemPath)
             return;
         const firmwareUris = yield vscode.window.showOpenDialog({
             canSelectFiles: true,
@@ -158,7 +201,7 @@ function showModelConfigWizard(target) {
         }
         const config = Object.assign(Object.assign({ schema_version: '1.0', inputs: {
                 firmware: relativePath(firmwareUris[0].fsPath),
-                system: relativePath(systemUris[0].fsPath),
+                system: relativePath(systemPath),
             } }, (adapter ? { debug: { adapter } } : {})), { limits: { max_steps: 100000 }, assertions: [{ expected_stop_reason: 'max_steps' }] });
         const written = (0, labConfig_1.writeLabConfig)(rootPath, config);
         vscode.window.showInformationMessage(`LabWired: Wrote ${vscode.workspace.asRelativePath(written)}`);
@@ -181,6 +224,26 @@ function fileExists(filePath) {
             return false;
         }
     });
+}
+function selectLocalSystemYaml() {
+    var _a;
+    return __awaiter(this, void 0, void 0, function* () {
+        const systemUris = yield vscode.window.showOpenDialog({
+            canSelectFiles: true,
+            canSelectFolders: false,
+            canSelectMany: false,
+            filters: { 'System YAML': ['yaml', 'yml'] },
+            title: 'LabWired: Select Model System YAML',
+            openLabel: 'Select System YAML',
+        });
+        return (_a = systemUris === null || systemUris === void 0 ? void 0 : systemUris[0]) === null || _a === void 0 ? void 0 : _a.fsPath;
+    });
+}
+function isCancellationError(error) {
+    return error instanceof Error && /cancel/i.test(error.message);
+}
+function errorMessage(error) {
+    return error instanceof Error ? error.message : String(error);
 }
 function importSvdWizard() {
     return __awaiter(this, void 0, void 0, function* () {
