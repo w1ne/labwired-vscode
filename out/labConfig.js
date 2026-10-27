@@ -113,7 +113,7 @@ function createCoreCompatibleTestScript(labConfigPath) {
 }
 exports.createCoreCompatibleTestScript = createCoreCompatibleTestScript;
 function removeTopLevelYamlEntries(source, keys) {
-    const document = YAML.parseDocument(source);
+    const document = YAML.parseDocument(source, { intAsBigInt: true });
     if (document.errors.length > 0) {
         throw new Error(`Cannot create a core-compatible test script: ${document.errors[0].message}`);
     }

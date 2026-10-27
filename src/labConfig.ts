@@ -145,7 +145,7 @@ export async function createCoreCompatibleTestScript(labConfigPath: string): Pro
 }
 
 function removeTopLevelYamlEntries(source: string, keys: string[]): string {
-    const document = YAML.parseDocument(source);
+    const document = YAML.parseDocument(source, { intAsBigInt: true });
     if (document.errors.length > 0) {
         throw new Error(`Cannot create a core-compatible test script: ${document.errors[0].message}`);
     }
