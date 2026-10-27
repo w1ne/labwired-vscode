@@ -422,7 +422,9 @@ async function existingCatalogMatches(
             if (!current || !current.equals(bytes)) return false;
         }
         for (const relative of onDisk.keys()) {
-            if (!extracted.has(relative) && !/^systems\/[^/]+$/.test(relative)) return false;
+            if (extracted.has(relative)) continue;
+            const bytes = onDisk.get(relative);
+            if (!bytes || !isCanonicalGeneratedSystem(relative, bytes)) return false;
         }
         return true;
     } catch (error) {
@@ -430,6 +432,47 @@ async function existingCatalogMatches(
         const message = error instanceof Error ? error.message : '';
         if (/cancelled/i.test(message)) throw error;
         return false;
+    } finally {
+        await removeIfPresent(tempPath);
+        await removeIfPresent(tempArchive);
+    }
+}
+
+function fallbackSystemYaml(chip: string): string {
+    return yaml.dump({
+        name: chip,
+        chip: `../chips/${chip}.yaml`,
+        external_devices: [],
+    });
+}
+
+function isCanonicalGeneratedSystem(relative: string, bytes: Buffer): boolean {
+    const match = /^systems\/([^/]+)\.yaml$/.exec(relative);
+    if (!match || !isChipName(match[1])) return false;
+    return bytes.equals(Buffer.from(fallbackSystemYaml(match[1])));
+}
+
+async function systemYamlFromVerifiedArchive(catalog: InstalledCatalog, chip: string): Promise<Buffer | undefined> {
+    const commitPath = path.dirname(catalog.configsPath);
+    const archive = await readRegularFile(path.join(commitPath, CATALOG_ARCHIVE_FILE));
+    if (!archive) throw new Error('The LabWired catalog archive is missing.');
+    const checksum = crypto.createHash('sha256').update(archive).digest('hex');
+    if (checksum !== catalog.sha256) {
+        throw new Error('The LabWired catalog archive SHA-256 checksum does not match its manifest.');
+    }
+
+    const tempName = `.system-${process.pid}-${crypto.randomBytes(8).toString('hex')}`;
+    const tempPath = path.join(path.dirname(commitPath), tempName);
+    const tempArchive = `${tempPath}.tar.gz`;
+    const token: CancellationTokenLike = {
+        isCancellationRequested: false,
+        onCancellationRequested: () => ({ dispose: () => undefined }),
+    };
+    try {
+        await fs.promises.mkdir(tempPath, { recursive: false, mode: 0o700 });
+        await fs.promises.writeFile(tempArchive, archive, { flag: 'wx', mode: 0o600 });
+        await extractArchiveSafely(tempArchive, tempPath, token);
+        return await readRegularFile(path.join(tempPath, 'configs', 'systems', `${chip}.yaml`));
     } finally {
         await removeIfPresent(tempPath);
         await removeIfPresent(tempArchive);
@@ -526,11 +569,18 @@ export async function findOrCreateSystemYaml(catalog: InstalledCatalog, chip: st
 
     const systemsPath = path.join(catalog.configsPath, 'systems');
     const systemPath = path.join(systemsPath, `${chip}.yaml`);
+    const archived = await systemYamlFromVerifiedArchive(catalog, chip);
+    const trusted = archived ?? Buffer.from(fallbackSystemYaml(chip));
     await assertNoSymlinkOnPath(catalog.configsPath, systemPath);
+
+    const current = await readRegularFile(systemPath);
+    if (current?.equals(trusted)) return systemPath;
+
     try {
         const stat = await fs.promises.lstat(systemPath);
-        if (!stat.isFile() || stat.isSymbolicLink()) throw new Error(`The LabWired system manifest for '${chip}' is not a regular file.`);
-        return systemPath;
+        if (stat.isSymbolicLink()) throw new Error('The LabWired catalog path contains a symlink.');
+        if (!stat.isFile()) throw new Error(`The LabWired system manifest for '${chip}' is not a regular file.`);
+        await fs.promises.unlink(systemPath);
     } catch (error) {
         if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error;
     }
@@ -538,18 +588,8 @@ export async function findOrCreateSystemYaml(catalog: InstalledCatalog, chip: st
     if (!await isDirectoryWithoutFollowingLinks(systemsPath)) {
         await fs.promises.mkdir(systemsPath);
     }
-    const fallback = yaml.dump({
-        name: chip,
-        chip: `../chips/${chip}.yaml`,
-        external_devices: [],
-    });
-    try {
-        await fs.promises.writeFile(systemPath, fallback, { flag: 'wx' });
-    } catch (error) {
-        if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
-    }
-
-    const stat = await fs.promises.lstat(systemPath);
-    if (!stat.isFile() || stat.isSymbolicLink()) throw new Error(`The LabWired system manifest for '${chip}' is not a regular file.`);
+    await fs.promises.writeFile(systemPath, trusted, { flag: 'wx' });
+    const written = await readRegularFile(systemPath);
+    if (!written?.equals(trusted)) throw new Error(`The LabWired system manifest for '${chip}' is not the verified catalog file.`);
     return systemPath;
 }

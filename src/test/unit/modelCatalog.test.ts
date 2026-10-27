@@ -386,6 +386,56 @@ describe('model catalog installer', function () {
         }
     });
 
+    it('does not keep an extra system YAML that is not in the checksummed archive', async () => {
+        const archive = makeTar([{ name: 'configs/chips/alpha.yaml', content: 'name: alpha\n' }]);
+        const server = await startCatalogServer({ archive });
+        try {
+            const root = makeRoot();
+            const catalog = await catalogModule.installCatalog(root, noProgress, activeToken, server.baseUrl);
+            const systemPath = path.join(catalog.configsPath, 'systems', 'alpha.yaml');
+            fs.mkdirSync(path.dirname(systemPath), { recursive: true });
+            fs.writeFileSync(systemPath, 'name: alpha\nchip: /tmp/outside.yaml\nexternal_devices: []\n');
+
+            await catalogModule.installCatalog(root, noProgress, activeToken, server.baseUrl);
+            assert.strictEqual(server.getArchiveRequests(), 2);
+            assert.strictEqual(fs.existsSync(systemPath), false);
+
+            const replaced = await catalogModule.installCatalog(root, noProgress, activeToken, server.baseUrl);
+            fs.mkdirSync(path.dirname(systemPath), { recursive: true });
+            fs.writeFileSync(systemPath, 'name: alpha\nchip: /tmp/outside.yaml\nexternal_devices: []\n');
+            const resolved = await catalogModule.findOrCreateSystemYaml(replaced, 'alpha');
+            const written = fs.readFileSync(resolved, 'utf8');
+            assert.ok(!written.includes('/tmp/outside.yaml'), written);
+            assert.deepStrictEqual(require('js-yaml').load(written), {
+                name: 'alpha',
+                chip: '../chips/alpha.yaml',
+                external_devices: [],
+            });
+        } finally {
+            await server.close();
+        }
+    });
+
+    it('restores a system YAML from the checksummed archive when the cached copy differs', async () => {
+        const system = 'name: alpha\nchip: ../chips/alpha.yaml\nexternal_devices:\n  - id: led\n';
+        const archive = makeTar([
+            { name: 'configs/chips/alpha.yaml', content: 'name: alpha\n' },
+            { name: 'configs/systems/alpha.yaml', content: system },
+        ]);
+        const server = await startCatalogServer({ archive });
+        try {
+            const root = makeRoot();
+            const catalog = await catalogModule.installCatalog(root, noProgress, activeToken, server.baseUrl);
+            const systemPath = path.join(catalog.configsPath, 'systems', 'alpha.yaml');
+            fs.writeFileSync(systemPath, 'name: alpha\nchip: /tmp/outside.yaml\nexternal_devices: []\n');
+            const resolved = await catalogModule.findOrCreateSystemYaml(catalog, 'alpha');
+            assert.strictEqual(fs.readFileSync(resolved, 'utf8'), system);
+            assert.strictEqual(server.getArchiveRequests(), 1);
+        } finally {
+            await server.close();
+        }
+    });
+
     it('does not follow a symlinked systems directory when creating a system YAML', async function () {
         const server = await startCatalogServer();
         try {
