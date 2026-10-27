@@ -321,6 +321,92 @@ describe('model catalog installer', function () {
             const second = await catalogModule.installCatalog(root, noProgress, activeToken, server.baseUrl);
             assert.strictEqual(first.configsPath, second.configsPath);
             assert.strictEqual(server.getArchiveRequests(), 1);
+            assert.strictEqual(
+                fs.readFileSync(path.join(root, '.labwired', 'models', coreCommit, 'configs', 'chips', 'alpha.yaml'), 'utf8'),
+                'name: alpha\n',
+            );
+        } finally {
+            await server.close();
+        }
+    });
+
+    function preseedConfigs(root: string): string {
+        const configs = path.join(root, '.labwired', 'models', coreCommit, 'configs');
+        fs.mkdirSync(path.join(configs, 'chips'), { recursive: true });
+        return configs;
+    }
+
+    it('replaces a preseeded config tree that does not match the archive checksum', async () => {
+        const archive = makeTar([
+            { name: 'configs/chips/alpha.yaml', content: 'name: alpha\n' },
+            { name: 'configs/systems/alpha.yaml', content: 'chip: ../chips/alpha.yaml\nexternal_devices: []\n' },
+        ]);
+        const server = await startCatalogServer({ archive });
+        try {
+            const root = makeRoot();
+            const configs = preseedConfigs(root);
+            const commitPath = path.dirname(configs);
+            fs.writeFileSync(path.join(configs, 'chips', 'alpha.yaml'), 'name: poisoned\n');
+            fs.writeFileSync(path.join(commitPath, 'catalog.sha256'), `${digest(archive)}\n`);
+            const catalog = await catalogModule.installCatalog(root, noProgress, activeToken, server.baseUrl);
+            assert.strictEqual(catalog.configsPath, configs);
+            assert.strictEqual(fs.readFileSync(path.join(configs, 'chips', 'alpha.yaml'), 'utf8'), 'name: alpha\n');
+            assert.strictEqual(server.getArchiveRequests(), 1);
+        } finally {
+            await server.close();
+        }
+    });
+
+    it('downloads the archive when a preseeded tree is missing a chip file', async () => {
+        const server = await startCatalogServer();
+        try {
+            const root = makeRoot();
+            const configs = preseedConfigs(root);
+            fs.writeFileSync(path.join(configs, 'README'), 'incomplete tree\n');
+            const catalog = await catalogModule.installCatalog(root, noProgress, activeToken, server.baseUrl);
+            assert.strictEqual(fs.readFileSync(path.join(catalog.configsPath, 'chips', 'alpha.yaml'), 'utf8'), 'name: alpha\n');
+            assert.strictEqual(server.getArchiveRequests(), 1);
+        } finally {
+            await server.close();
+        }
+    });
+
+    it('replaces a cached tree whose files differ from the verified archive', async () => {
+        const server = await startCatalogServer();
+        try {
+            const root = makeRoot();
+            const catalog = await catalogModule.installCatalog(root, noProgress, activeToken, server.baseUrl);
+            const chipPath = path.join(catalog.configsPath, 'chips', 'alpha.yaml');
+            fs.writeFileSync(chipPath, 'name: poisoned\n');
+            await catalogModule.installCatalog(root, noProgress, activeToken, server.baseUrl);
+            assert.strictEqual(fs.readFileSync(chipPath, 'utf8'), 'name: alpha\n');
+            assert.strictEqual(server.getArchiveRequests(), 2);
+        } finally {
+            await server.close();
+        }
+    });
+
+    it('does not follow a symlinked systems directory when creating a system YAML', async function () {
+        const server = await startCatalogServer();
+        try {
+            const root = makeRoot();
+            const catalog = await catalogModule.installCatalog(root, noProgress, activeToken, server.baseUrl);
+            const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'lw-model-catalog-outside-'));
+            tempRoots.push(outside);
+            const systemsPath = path.join(catalog.configsPath, 'systems');
+            fs.rmSync(systemsPath, { recursive: true, force: true });
+            try {
+                fs.symlinkSync(outside, systemsPath, 'dir');
+            } catch (error) {
+                const code = (error as NodeJS.ErrnoException).code;
+                if (code === 'EPERM' || code === 'EACCES') this.skip();
+                throw error;
+            }
+            await assert.rejects(
+                catalogModule.findOrCreateSystemYaml(catalog, 'alpha'),
+                /symlink/i,
+            );
+            assert.strictEqual(fs.existsSync(path.join(outside, 'alpha.yaml')), false);
         } finally {
             await server.close();
         }

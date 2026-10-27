@@ -293,10 +293,93 @@ describe('model catalog installer', function () {
             const second = yield catalogModule.installCatalog(root, noProgress, activeToken, server.baseUrl);
             assert.strictEqual(first.configsPath, second.configsPath);
             assert.strictEqual(server.getArchiveRequests(), 1);
+            assert.strictEqual(fs.readFileSync(path.join(root, '.labwired', 'models', coreCommit, 'configs', 'chips', 'alpha.yaml'), 'utf8'), 'name: alpha\n');
         }
         finally {
             yield server.close();
         }
     }));
+    function preseedConfigs(root) {
+        const configs = path.join(root, '.labwired', 'models', coreCommit, 'configs');
+        fs.mkdirSync(path.join(configs, 'chips'), { recursive: true });
+        return configs;
+    }
+    it('replaces a preseeded config tree that does not match the archive checksum', () => __awaiter(this, void 0, void 0, function* () {
+        const archive = makeTar([
+            { name: 'configs/chips/alpha.yaml', content: 'name: alpha\n' },
+            { name: 'configs/systems/alpha.yaml', content: 'chip: ../chips/alpha.yaml\nexternal_devices: []\n' },
+        ]);
+        const server = yield startCatalogServer({ archive });
+        try {
+            const root = makeRoot();
+            const configs = preseedConfigs(root);
+            const commitPath = path.dirname(configs);
+            fs.writeFileSync(path.join(configs, 'chips', 'alpha.yaml'), 'name: poisoned\n');
+            fs.writeFileSync(path.join(commitPath, 'catalog.sha256'), `${digest(archive)}\n`);
+            const catalog = yield catalogModule.installCatalog(root, noProgress, activeToken, server.baseUrl);
+            assert.strictEqual(catalog.configsPath, configs);
+            assert.strictEqual(fs.readFileSync(path.join(configs, 'chips', 'alpha.yaml'), 'utf8'), 'name: alpha\n');
+            assert.strictEqual(server.getArchiveRequests(), 1);
+        }
+        finally {
+            yield server.close();
+        }
+    }));
+    it('downloads the archive when a preseeded tree is missing a chip file', () => __awaiter(this, void 0, void 0, function* () {
+        const server = yield startCatalogServer();
+        try {
+            const root = makeRoot();
+            const configs = preseedConfigs(root);
+            fs.writeFileSync(path.join(configs, 'README'), 'incomplete tree\n');
+            const catalog = yield catalogModule.installCatalog(root, noProgress, activeToken, server.baseUrl);
+            assert.strictEqual(fs.readFileSync(path.join(catalog.configsPath, 'chips', 'alpha.yaml'), 'utf8'), 'name: alpha\n');
+            assert.strictEqual(server.getArchiveRequests(), 1);
+        }
+        finally {
+            yield server.close();
+        }
+    }));
+    it('replaces a cached tree whose files differ from the verified archive', () => __awaiter(this, void 0, void 0, function* () {
+        const server = yield startCatalogServer();
+        try {
+            const root = makeRoot();
+            const catalog = yield catalogModule.installCatalog(root, noProgress, activeToken, server.baseUrl);
+            const chipPath = path.join(catalog.configsPath, 'chips', 'alpha.yaml');
+            fs.writeFileSync(chipPath, 'name: poisoned\n');
+            yield catalogModule.installCatalog(root, noProgress, activeToken, server.baseUrl);
+            assert.strictEqual(fs.readFileSync(chipPath, 'utf8'), 'name: alpha\n');
+            assert.strictEqual(server.getArchiveRequests(), 2);
+        }
+        finally {
+            yield server.close();
+        }
+    }));
+    it('does not follow a symlinked systems directory when creating a system YAML', function () {
+        return __awaiter(this, void 0, void 0, function* () {
+            const server = yield startCatalogServer();
+            try {
+                const root = makeRoot();
+                const catalog = yield catalogModule.installCatalog(root, noProgress, activeToken, server.baseUrl);
+                const outside = fs.mkdtempSync(path.join(os.tmpdir(), 'lw-model-catalog-outside-'));
+                tempRoots.push(outside);
+                const systemsPath = path.join(catalog.configsPath, 'systems');
+                fs.rmSync(systemsPath, { recursive: true, force: true });
+                try {
+                    fs.symlinkSync(outside, systemsPath, 'dir');
+                }
+                catch (error) {
+                    const code = error.code;
+                    if (code === 'EPERM' || code === 'EACCES')
+                        this.skip();
+                    throw error;
+                }
+                yield assert.rejects(catalogModule.findOrCreateSystemYaml(catalog, 'alpha'), /symlink/i);
+                assert.strictEqual(fs.existsSync(path.join(outside, 'alpha.yaml')), false);
+            }
+            finally {
+                yield server.close();
+            }
+        });
+    });
 });
 //# sourceMappingURL=modelCatalog.test.js.map
