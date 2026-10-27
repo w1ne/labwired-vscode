@@ -13,7 +13,10 @@ project's `.labwired/lab.yaml` so F5 and the Run command use the same model.
    core source checkout cannot browse the model list or download model data.
 2. **Generate a public config bundle from the core catalog:** uses the existing
    core YAML tree as the only source, updates as core changes, and does not
-   require a hand-maintained second model list. This is the recommended path.
+   require a hand-maintained second model list. The published `chips` array is
+   generated directly from `Catalog::chip_names()`, so the extension does not
+   maintain a second list or duplicate the core discovery rules. This is the
+   recommended path.
 3. **Bundle a separate model list with the extension:** easy to host, but the
    list and model files can drift from core and only update with an extension
    release.
@@ -24,10 +27,10 @@ project's `.labwired/lab.yaml` so F5 and the Run command use the same model.
 2. A native Quick Pick offers **Choose from LabWired catalog** and **Select
    model YAML**.
 3. Catalog selection downloads or reuses the public core config bundle. The
-   Quick Pick lists root-level chip YAMLs using the same semantics as
-   `Catalog::chip_names`; a matching `configs/systems/<chip>.yaml` is used when
-   present. Otherwise the extension writes a minimal system manifest that
-   points at the selected chip descriptor.
+   Quick Pick lists the `chips` names from the generated catalog manifest; a
+   matching `configs/systems/<chip>.yaml` is used when present. Otherwise the
+   extension writes a minimal system manifest that points at the selected chip
+   descriptor.
 4. The extension stores the downloaded `configs` tree under
    `.labwired/models/<catalog-commit>/configs`, preserving relative paths used
    by chip and peripheral YAMLs. It then asks for the firmware ELF.
@@ -43,10 +46,11 @@ project's `.labwired/lab.yaml` so F5 and the Run command use the same model.
 `$LABWIRED_CONFIG_DIR` or the repository's `configs` directory. It does not
 serve or download that catalog. A small core workflow will publish
 `configs.tar.gz` and `catalog.json` to a dedicated public `model-catalog`
-artifact branch whenever `main` changes under `configs/`. The JSON records the
-core commit SHA and SHA-256 checksum for the archive. This makes the existing
-YAML files the single source of truth and lets the extension cache the
-downloaded bundle by commit SHA.
+artifact branch whenever `main` changes under `configs/`. The JSON contains
+the core commit SHA, the sorted chip names produced by `Catalog::chip_names()`,
+and the SHA-256 checksum for the archive. This makes the existing YAML files
+and catalog implementation the single source of truth and lets the extension
+cache the downloaded bundle by commit SHA.
 
 The extension uses VS Code's built-in progress and notification APIs during
 download and extraction. A failed or cancelled download leaves the project
