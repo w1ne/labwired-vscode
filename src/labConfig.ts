@@ -6,13 +6,33 @@
 
 import * as path from 'path';
 import * as fs from 'fs';
+import * as crypto from 'crypto';
 import * as yaml from 'js-yaml';
+import * as YAML from 'yaml';
 
 export const LAB_CONFIG_REL = path.join('.labwired', 'lab.yaml');
+
+const LAB_PROFILE_SCHEMA = yaml.DEFAULT_SCHEMA.extend([
+    new yaml.Type('!after_cycles', { kind: 'mapping', construct: (value: unknown) => value }),
+    new yaml.Type('!at_start', { kind: 'scalar', construct: (value: unknown) => value }),
+    new yaml.Type('!on_write', { kind: 'mapping', construct: (value: unknown) => value }),
+    new yaml.Type('!on_read', { kind: 'mapping', construct: (value: unknown) => value }),
+]);
+
+export interface LabDebugAdapter {
+    executable: string;
+    build?: { command: string; args: string[]; cwd?: string };
+}
+
+export interface LabRunner {
+    executable: string;
+}
 
 export interface LabConfig {
     schema_version: string;
     inputs: { firmware?: string; system?: string };
+    debug?: { adapter?: LabDebugAdapter };
+    runner?: LabRunner;
     limits?: { max_steps?: number };
     assertions?: any[];
 }
@@ -25,7 +45,161 @@ export function findLabConfig(root: string): string | undefined {
 
 export function readLabConfig(file: string): LabConfig {
     const raw = fs.readFileSync(file, 'utf8');
-    return yaml.load(raw) as LabConfig;
+    const parsed = yaml.load(raw, { schema: LAB_PROFILE_SCHEMA });
+    if (!isRecord(parsed)) {
+        throw new Error('lab.yaml must contain a YAML mapping.');
+    }
+
+    const config = parsed as Record<string, any>;
+    if (config.inputs !== undefined && !isRecord(config.inputs)) {
+        throw new Error('lab.yaml inputs must be a mapping.');
+    }
+    const inputs = (config.inputs || {}) as Record<string, unknown>;
+    for (const field of ['firmware', 'system'] as const) {
+        const value = inputs[field];
+        if (value !== undefined && (typeof value !== 'string' || value.length === 0)) {
+            throw new Error(`lab.yaml inputs.${field} must be a non-empty path string.`);
+        }
+    }
+
+    if (config.debug !== undefined && !isRecord(config.debug)) {
+        throw new Error('lab.yaml debug must be a mapping.');
+    }
+    if (config.runner !== undefined && !isRecord(config.runner)) {
+        throw new Error('lab.yaml runner must be a mapping.');
+    }
+    const debug = config.debug as Record<string, unknown> | undefined;
+    const runner = config.runner as Record<string, unknown> | undefined;
+    if (debug?.adapter !== undefined && !isRecord(debug.adapter)) {
+        throw new Error('lab.yaml debug.adapter must be a mapping.');
+    }
+
+    const adapter = debug?.adapter as Record<string, unknown> | undefined;
+    let resolvedAdapter: LabDebugAdapter | undefined;
+    if (adapter) {
+        if (adapter.build !== undefined && (typeof adapter.executable !== 'string' || adapter.executable.length === 0)) {
+            throw new Error('lab.yaml debug.adapter.executable is required when debug.adapter.build is configured.');
+        }
+        if (typeof adapter.executable !== 'string' || adapter.executable.length === 0) {
+            throw new Error('lab.yaml debug.adapter.executable must be a non-empty path string.');
+        }
+
+        let build: LabDebugAdapter['build'];
+        if (adapter.build !== undefined) {
+            if (!isRecord(adapter.build)) {
+                throw new Error('lab.yaml debug.adapter.build must be a mapping.');
+            }
+            const rawBuild = adapter.build as Record<string, unknown>;
+            if (typeof rawBuild.command !== 'string' || rawBuild.command.length === 0) {
+                throw new Error('lab.yaml debug.adapter.build.command must be a non-empty program string.');
+            }
+            if (!Array.isArray(rawBuild.args) || !rawBuild.args.every((arg) => typeof arg === 'string')) {
+                throw new Error('lab.yaml debug.adapter.build.args must be an array of strings.');
+            }
+            if (rawBuild.cwd !== undefined && (typeof rawBuild.cwd !== 'string' || rawBuild.cwd.length === 0)) {
+                throw new Error('lab.yaml debug.adapter.build.cwd must be a non-empty path string.');
+            }
+            build = {
+                command: rawBuild.command,
+                args: rawBuild.args as string[],
+                ...(typeof rawBuild.cwd === 'string' ? { cwd: resolveProfilePath(file, rawBuild.cwd) } : {}),
+            };
+        }
+        resolvedAdapter = {
+            executable: resolveProfilePath(file, adapter.executable),
+            ...(build ? { build } : {}),
+        };
+    }
+
+    let resolvedRunner: LabRunner | undefined;
+    if (runner) {
+        const executable = runner.executable;
+        if (typeof executable !== 'string' || executable.trim().length === 0) {
+            throw new Error('lab.yaml runner.executable must be a non-empty path string.');
+        }
+        resolvedRunner = { executable: resolveProfileExecutablePath(file, executable) };
+    }
+
+    return {
+        ...(config as unknown as LabConfig),
+        inputs: {
+            ...(typeof inputs.firmware === 'string' ? { firmware: resolveProfilePath(file, inputs.firmware) } : {}),
+            ...(typeof inputs.system === 'string' ? { system: resolveProfilePath(file, inputs.system) } : {}),
+        },
+        ...(debug ? { debug: { ...(resolvedAdapter ? { adapter: resolvedAdapter } : {}) } } : {}),
+        ...(runner ? { runner: resolvedRunner } : {}),
+    };
+}
+
+/** Create a disposable core TestScript copy without extension-only debugger settings. */
+export async function createCoreCompatibleTestScript(labConfigPath: string): Promise<string> {
+    const raw = await fs.promises.readFile(labConfigPath, 'utf8');
+    const coreScript = removeTopLevelYamlEntries(raw, ['debug', 'runner']);
+    const parent = path.dirname(labConfigPath);
+    const tempPath = path.join(
+        parent,
+        `.labwired-test-${process.pid}-${crypto.randomBytes(12).toString('hex')}.yaml`
+    );
+    await fs.promises.writeFile(tempPath, coreScript, { flag: 'wx', mode: 0o600 });
+    return tempPath;
+}
+
+function removeTopLevelYamlEntries(source: string, keys: string[]): string {
+    const document = YAML.parseDocument(source, { intAsBigInt: true });
+    if (document.errors.length > 0) {
+        throw new Error(`Cannot create a core-compatible test script: ${document.errors[0].message}`);
+    }
+
+    if (document.contents instanceof YAML.YAMLMap) {
+        for (const key of keys) document.delete(key);
+    }
+    rewriteBareAtStartTags(document);
+
+    return document.toString();
+}
+
+/** `!at_start` is a unit tag. Emitting it as an empty string makes serde_yaml reject the script. */
+function rewriteBareAtStartTags(document: YAML.Document): void {
+    YAML.visit(document, {
+        Scalar(_key, node) {
+            if (node.tag !== '!at_start') return;
+            node.value = null;
+            node.source = undefined;
+        },
+    });
+}
+
+/** The active debug session wins; otherwise use the system selected in lab.yaml. */
+export function resolveSystemConfigPath(root: string, activeDebugPath?: unknown): string | undefined {
+    if (typeof activeDebugPath === 'string' && activeDebugPath.trim().length > 0) {
+        return path.isAbsolute(activeDebugPath)
+            ? activeDebugPath
+            : path.resolve(root, activeDebugPath);
+    }
+
+    const labConfigPath = findLabConfig(root);
+    if (!labConfigPath) return undefined;
+    return readLabConfig(labConfigPath).inputs?.system;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+export function resolveProfileExecutablePath(
+    configFile: string,
+    value: string,
+    platform = process.platform
+): string {
+    const resolvedPath = resolveProfilePath(configFile, value);
+    if (platform === 'win32' && path.extname(resolvedPath).length === 0 && fs.existsSync(`${resolvedPath}.exe`)) {
+        return `${resolvedPath}.exe`;
+    }
+    return resolvedPath;
+}
+
+function resolveProfilePath(configFile: string, value: string): string {
+    return path.isAbsolute(value) ? value : path.resolve(path.dirname(configFile), value);
 }
 
 export function writeLabConfig(root: string, cfg: LabConfig): string {

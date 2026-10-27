@@ -17,6 +17,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.deactivate = exports.activate = exports.LabwiredDebugAdapterDescriptorFactory = exports.LabwiredConfigurationProvider = exports.handleLabwiredDebugEvent = void 0;
 const vscode = require("vscode");
 const path = require("path");
+const fs = require("fs");
 const commandCenter_1 = require("./commandCenter");
 const timeline_1 = require("./timeline");
 const peripheralProvider_1 = require("./peripheralProvider");
@@ -39,6 +40,8 @@ const registersPanel_1 = require("./registersPanel");
 const auth_1 = require("./auth");
 const mcpSetup_1 = require("./mcpSetup");
 const openCodeAgent_1 = require("./openCodeAgent");
+const customDap_1 = require("./customDap");
+const workspaceSelection_1 = require("./workspaceSelection");
 function handleLabwiredDebugEvent(e, deps) {
     var _a, _b, _c;
     if (e.session.type !== 'labwired') {
@@ -125,7 +128,7 @@ class LabwiredConfigurationProvider {
         ];
     }
     resolveDebugConfiguration(folder, config, token) {
-        var _a, _b;
+        var _a;
         return __awaiter(this, void 0, void 0, function* () {
             this.output.appendLine(`LabWired: Resolving debug configuration...`);
             if (!config.type && !config.request && !config.name) {
@@ -140,20 +143,26 @@ class LabwiredConfigurationProvider {
             if (labRoot) {
                 const labConfigPath = (0, labConfig_1.findLabConfig)(labRoot);
                 if (labConfigPath) {
-                    const labDir = path.join(labRoot, '.labwired');
                     try {
                         const lab = (0, labConfig_1.readLabConfig)(labConfigPath);
                         if (!config.program && ((_a = lab.inputs) === null || _a === void 0 ? void 0 : _a.firmware)) {
-                            config.program = path.resolve(labDir, lab.inputs.firmware);
+                            config.program = lab.inputs.firmware;
                             this.output.appendLine(`LabWired: Program from lab.yaml: ${config.program}`);
-                        }
-                        if (!config.systemConfig && ((_b = lab.inputs) === null || _b === void 0 ? void 0 : _b.system)) {
-                            config.systemConfig = path.resolve(labDir, lab.inputs.system);
-                            this.output.appendLine(`LabWired: System config from lab.yaml: ${config.systemConfig}`);
                         }
                     }
                     catch (e) {
                         this.output.appendLine(`LabWired: Failed to read lab.yaml: ${e}`);
+                    }
+                }
+                if (!config.systemConfig) {
+                    try {
+                        config.systemConfig = (0, labConfig_1.resolveSystemConfigPath)(labRoot);
+                        if (config.systemConfig) {
+                            this.output.appendLine(`LabWired: System config from lab.yaml: ${config.systemConfig}`);
+                        }
+                    }
+                    catch (e) {
+                        this.output.appendLine(`LabWired: Failed to read lab.yaml system input: ${e}`);
                     }
                 }
             }
@@ -186,10 +195,10 @@ class LabwiredConfigurationProvider {
                 // the user clicks something — the session should abort now, and the
                 // offer to fix it is an aside, not a gate.
                 void vscode.window
-                    .showErrorMessage('LabWired: no built firmware found. Build the project first, or set it up so LabWired knows which ELF to run.', 'Set up LabWired', 'Open Output')
+                    .showErrorMessage('LabWired: no built firmware found. Build the project first, or set it up so LabWired knows which ELF to run.', 'Configure Model', 'Open Output')
                     .then((choice) => {
-                    if (choice === 'Set up LabWired') {
-                        return vscode.commands.executeCommand('labwired.configureProject');
+                    if (choice === 'Configure Model') {
+                        return vscode.commands.executeCommand('labwired.configureModel', folder);
                     }
                     if (choice === 'Open Output') {
                         this.output.show();
@@ -197,6 +206,28 @@ class LabwiredConfigurationProvider {
                     return undefined;
                 });
                 return undefined; // abort launch
+            }
+            if (rootPath) {
+                let systemProblem;
+                if (!config.systemConfig) {
+                    systemProblem = 'LabWired: no model system YAML is selected in .labwired/lab.yaml.';
+                }
+                else if (!(yield this.checkFile(config.systemConfig))) {
+                    systemProblem = `LabWired: model system YAML was not found at '${config.systemConfig}'.`;
+                }
+                if (systemProblem) {
+                    this.output.appendLine(systemProblem);
+                    void vscode.window.showErrorMessage(`${systemProblem} Configure a model before starting the debugger.`, 'Configure Model', 'Open Output').then((choice) => {
+                        if (choice === 'Configure Model') {
+                            return vscode.commands.executeCommand('labwired.configureModel', folder);
+                        }
+                        if (choice === 'Open Output') {
+                            this.output.show();
+                        }
+                        return undefined;
+                    });
+                    return undefined;
+                }
             }
             // Auto-detect Rust source for standard library to avoid "File not found" errors
             try {
@@ -228,8 +259,60 @@ class LabwiredDebugAdapterDescriptorFactory {
         this.output = output;
     }
     createDebugAdapterDescriptor(session, executable) {
+        var _a;
         return __awaiter(this, void 0, void 0, function* () {
             this.output.appendLine("LabWired: Creating Debug Adapter Descriptor...");
+            const workspaceFolder = session.workspaceFolder;
+            const modelConfigPath = workspaceFolder ? (0, labConfig_1.findLabConfig)(workspaceFolder.uri.fsPath) : undefined;
+            if (modelConfigPath) {
+                let adapter;
+                try {
+                    adapter = (_a = (0, labConfig_1.readLabConfig)(modelConfigPath).debug) === null || _a === void 0 ? void 0 : _a.adapter;
+                }
+                catch (e) {
+                    const message = e instanceof Error ? e.message : String(e);
+                    this.output.appendLine(`LabWired: Failed to read model profile: ${message}`);
+                    vscode.window.showErrorMessage(`LabWired: Could not read .labwired/lab.yaml. ${message}`);
+                    throw e;
+                }
+                if (adapter) {
+                    if (adapter.build) {
+                        try {
+                            const result = yield (0, customDap_1.runCustomDapBuild)(adapter.build);
+                            if (result.stdout)
+                                this.output.append(result.stdout);
+                            if (result.stderr)
+                                this.output.append(result.stderr);
+                        }
+                        catch (e) {
+                            const message = e instanceof Error ? e.message : String(e);
+                            this.output.appendLine(message);
+                            this.output.show();
+                            vscode.window.showErrorMessage('LabWired: Custom DAP build failed. See the LabWired output for build output.');
+                            throw e;
+                        }
+                    }
+                    const dapPath = (0, customDap_1.customDapExecutablePath)(adapter.executable);
+                    let isFile = false;
+                    try {
+                        isFile = fs.statSync(dapPath).isFile();
+                        if (isFile && process.platform !== 'win32') {
+                            fs.accessSync(dapPath, fs.constants.X_OK);
+                        }
+                    }
+                    catch (_b) {
+                        isFile = false;
+                    }
+                    if (!isFile) {
+                        const message = `LabWired: Custom DAP executable '${dapPath}' is missing or not runnable. Check debug.adapter.executable and its build command in .labwired/lab.yaml.`;
+                        this.output.appendLine(message);
+                        vscode.window.showErrorMessage(message);
+                        throw new Error(message);
+                    }
+                    this.output.appendLine(`LabWired: Using custom DAP binary at ${dapPath}`);
+                    return new vscode.DebugAdapterExecutable(dapPath, []);
+                }
+            }
             // 1. Check User Config
             const config = vscode.workspace.getConfiguration('labwired');
             const executionMode = config.get('executionMode') || 'local';
@@ -395,8 +478,8 @@ function activateInner(context) {
         }
     }));
     context.subscriptions.push(vscode.commands.registerCommand('labwired.startSimulator', () => __awaiter(this, void 0, void 0, function* () {
-        const workspaceFolders = vscode.workspace.workspaceFolders;
-        if (!workspaceFolders || workspaceFolders.length === 0)
+        const workspaceFolder = (0, workspaceSelection_1.resolveModelWorkspaceFolder)();
+        if (!workspaceFolder)
             return;
         const activeSession = vscode.debug.activeDebugSession;
         const baseConfig = (activeSession === null || activeSession === void 0 ? void 0 : activeSession.type) === 'labwired' ? activeSession.configuration : undefined;
@@ -407,7 +490,7 @@ function activateInner(context) {
             request: 'launch',
             stopOnEntry: false
         };
-        const started = yield vscode.debug.startDebugging(workspaceFolders[0], debugConfig);
+        const started = yield vscode.debug.startDebugging(workspaceFolder, debugConfig);
         if (!started) {
             vscode.window.showErrorMessage('LabWired: Failed to start debug session.');
         }
@@ -427,8 +510,11 @@ function activateInner(context) {
         }
         yield vscode.commands.executeCommand('labwired.startSimulator');
     })));
-    context.subscriptions.push(vscode.commands.registerCommand('labwired.configureProject', () => __awaiter(this, void 0, void 0, function* () {
-        yield (0, configWizard_1.showConfigWizard)();
+    context.subscriptions.push(vscode.commands.registerCommand('labwired.configureProject', (target) => __awaiter(this, void 0, void 0, function* () {
+        yield (0, configWizard_1.showModelConfigWizard)(target);
+    })));
+    context.subscriptions.push(vscode.commands.registerCommand('labwired.configureModel', (target) => __awaiter(this, void 0, void 0, function* () {
+        yield (0, configWizard_1.showModelConfigWizard)(target);
     })));
     context.subscriptions.push(vscode.commands.registerCommand('labwired.importSvd', () => __awaiter(this, void 0, void 0, function* () {
         // Dynamic import to avoid circular dependencies if any, though explicit import is better
@@ -569,13 +655,13 @@ function activateInner(context) {
     context.subscriptions.push(dashboardBtn);
 }
 function compileAndRun(context, outputChannel, simulatorManager) {
-    var _a;
+    var _a, _b;
     return __awaiter(this, void 0, void 0, function* () {
-        const workspaceFolders = vscode.workspace.workspaceFolders;
-        if (!workspaceFolders || workspaceFolders.length === 0) {
+        const workspaceFolder = (0, workspaceSelection_1.resolveCurrentModelWorkspaceFolder)();
+        if (!workspaceFolder) {
             throw new Error("No workspace folder open");
         }
-        const rootPath = workspaceFolders[0].uri.fsPath;
+        const rootPath = workspaceFolder.uri.fsPath;
         // 0. Stop simulator if running
         simulatorManager.stop();
         // 1. Detect project type. The build target triple comes from the project's own
@@ -620,9 +706,9 @@ function compileAndRun(context, outputChannel, simulatorManager) {
         // 3. Ensure the one-file contract exists (.labwired/lab.yaml).
         const migration = (0, labConfig_1.migrateLabConfig)(rootPath);
         if (migration === 'none') {
-            const choice = yield vscode.window.showErrorMessage('LabWired: No .labwired/lab.yaml found and nothing to migrate. Configure the project?', 'Configure Project');
-            if (choice === 'Configure Project') {
-                yield vscode.commands.executeCommand('labwired.configureProject');
+            const choice = yield vscode.window.showErrorMessage('LabWired: No .labwired/lab.yaml found and nothing to migrate. Configure a model?', 'Configure Model');
+            if (choice === 'Configure Model') {
+                yield vscode.commands.executeCommand('labwired.configureModel', vscode.workspace.getWorkspaceFolder(vscode.Uri.file(rootPath)));
             }
             return;
         }
@@ -632,33 +718,43 @@ function compileAndRun(context, outputChannel, simulatorManager) {
         // The freshly built binary is whatever lab.yaml names as inputs.firmware.
         // Pass it explicitly as --firmware so a rebuild is always what runs.
         let firmware;
-        try {
-            const lab = (0, labConfig_1.readLabConfig)(labConfigPath);
-            if ((_a = lab.inputs) === null || _a === void 0 ? void 0 : _a.firmware) {
-                firmware = path.resolve(labDir, lab.inputs.firmware);
-            }
+        const lab = (0, labConfig_1.readLabConfig)(labConfigPath);
+        if ((_a = lab.inputs) === null || _a === void 0 ? void 0 : _a.firmware) {
+            firmware = lab.inputs.firmware;
         }
-        catch (e) {
-            outputChannel.appendLine(`LabWired: Failed to read lab.yaml: ${e}`);
-        }
-        // 4. Run the SAME command CI runs: labwired test --script <lab.yaml> ...
+        const runnerExecutable = (_b = lab.runner) === null || _b === void 0 ? void 0 : _b.executable;
+        // 4. Run the core TestScript from a temporary copy without extension-only debug settings.
         let cli;
-        try {
-            cli = yield (0, cli_1.resolveCli)(context, outputChannel);
+        if (runnerExecutable) {
+            try {
+                if (!fs.statSync(runnerExecutable).isFile())
+                    throw new Error('not a file');
+            }
+            catch (_c) {
+                throw new Error(`LabWired: Configured runner executable '${runnerExecutable}' is missing. Check runner.executable in .labwired/lab.yaml.`);
+            }
+            cli = runnerExecutable;
         }
-        catch (e) {
-            (0, crashReport_1.reportCrash)(e, {
-                stage: 'download',
-                binarySource: (0, crashFingerprint_1.binarySourceOf)(cli_1.CLI_BIN),
-                extensionVersion: extensionVersion(context),
-            });
-            throw e;
+        else {
+            try {
+                cli = yield (0, cli_1.resolveCli)(context, outputChannel);
+            }
+            catch (e) {
+                (0, crashReport_1.reportCrash)(e, {
+                    stage: 'download',
+                    binarySource: (0, crashFingerprint_1.binarySourceOf)(cli_1.CLI_BIN),
+                    extensionVersion: extensionVersion(context),
+                });
+                throw e;
+            }
         }
         let exitCode;
         let result;
+        let coreTestScriptPath;
         try {
+            coreTestScriptPath = yield (0, labConfig_1.createCoreCompatibleTestScript)(labConfigPath);
             ({ exitCode, result } = yield (0, cli_1.runTest)(cli, {
-                script: labConfigPath,
+                script: coreTestScriptPath,
                 cwd: rootPath,
                 outputDir,
                 firmware,
@@ -674,6 +770,16 @@ function compileAndRun(context, outputChannel, simulatorManager) {
                 extensionVersion: extensionVersion(context),
             });
             throw e;
+        }
+        finally {
+            if (coreTestScriptPath) {
+                try {
+                    yield fs.promises.rm(coreTestScriptPath, { force: true });
+                }
+                catch (error) {
+                    outputChannel.appendLine(`LabWired: Failed to remove temporary test script: ${error}`);
+                }
+            }
         }
         outputChannel.show();
         const status = result === null || result === void 0 ? void 0 : result.status;
