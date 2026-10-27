@@ -66,10 +66,12 @@ class LabwiredCommandCenterProvider {
             watcher.onDidDelete(() => this.updateBoard());
         }
         const activeSessionWatcher = vscode.debug.onDidChangeActiveDebugSession(() => this.updateBoard());
+        const activeEditorWatcher = vscode.window.onDidChangeActiveTextEditor(() => this.updateBoard());
         webviewView.onDidDispose(() => {
             this._webviewReady = false;
             watchers.forEach((watcher) => watcher.dispose());
             activeSessionWatcher.dispose();
+            activeEditorWatcher.dispose();
         });
         this.updateBoard();
     }

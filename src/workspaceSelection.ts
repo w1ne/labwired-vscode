@@ -31,19 +31,30 @@ function resolveWorkspaceFolder(
 
     const activeEditor = vscode.window.activeTextEditor;
     if (preferCurrentEditor && activeEditor) {
-        const editorFolder = vscode.workspace.getWorkspaceFolder(activeEditor.document.uri);
+        const editorFolder = workspaceForEditor(folders, activeEditor.document.uri);
         if (editorFolder) return editorFolder;
     }
 
-    const activeSessionFolder = vscode.debug.activeDebugSession?.workspaceFolder;
+    const activeSession = vscode.debug.activeDebugSession;
+    const activeSessionFolder = activeSession?.type === 'labwired'
+        ? activeSession.workspaceFolder
+        : undefined;
     if (activeSessionFolder) return activeSessionFolder;
 
     if (!preferCurrentEditor && activeEditor) {
-        const editorFolder = vscode.workspace.getWorkspaceFolder(activeEditor.document.uri);
+        const editorFolder = workspaceForEditor(folders, activeEditor.document.uri);
         if (editorFolder) return editorFolder;
     }
 
     return folders[0];
+}
+
+function workspaceForEditor(
+    folders: readonly vscode.WorkspaceFolder[],
+    editorUri: vscode.Uri,
+): vscode.WorkspaceFolder | undefined {
+    return containingWorkspace(folders, editorUri.fsPath)
+        || vscode.workspace.getWorkspaceFolder(editorUri);
 }
 
 function targetPath(target: ModelWorkspaceTarget): string | undefined {

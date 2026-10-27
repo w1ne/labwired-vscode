@@ -57,6 +57,7 @@ export class SystemTopologyPanel {
             this._disposables.push(watcher);
         }
         this._disposables.push(vscode.debug.onDidChangeActiveDebugSession(() => this._update()));
+        this._disposables.push(vscode.window.onDidChangeActiveTextEditor(() => this._update()));
     }
 
     public sendTelemetry(data: any) {
