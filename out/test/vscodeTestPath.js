@@ -4,10 +4,11 @@ exports.resolveVSCodeTestExecutable = void 0;
 const fs = require("fs");
 const path = require("path");
 function resolveVSCodeTestExecutable(executablePath, platform = process.platform, exists = fs.existsSync) {
-    if (platform !== 'darwin' || exists(executablePath) || path.basename(executablePath) !== 'Electron') {
+    const pathApi = platform === 'darwin' ? path.posix : path;
+    if (platform !== 'darwin' || exists(executablePath) || pathApi.basename(executablePath) !== 'Electron') {
         return executablePath;
     }
-    const currentLauncher = path.join(path.dirname(executablePath), 'Code');
+    const currentLauncher = pathApi.join(pathApi.dirname(executablePath), 'Code');
     return exists(currentLauncher) ? currentLauncher : executablePath;
 }
 exports.resolveVSCodeTestExecutable = resolveVSCodeTestExecutable;
