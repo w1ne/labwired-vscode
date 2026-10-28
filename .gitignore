@@ -1,3 +1,9 @@
 .vscode-test/
 node_modules/
 *.vsix
+
+# Local test runner output (do not commit)
+test_output.txt
+
+# Local planning/specs (private; never commit)
+docs/superpowers/
