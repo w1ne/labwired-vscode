@@ -832,7 +832,7 @@ async function compileAndRun(context: vscode.ExtensionContext, outputChannel: vs
         try {
             if (!fs.statSync(runnerExecutable).isFile()) throw new Error('not a file');
         } catch {
-            throw new Error(`LabWired: Configured runner executable '${runnerExecutable}' is missing. Check runner.executable in .labwired/lab.yaml.`);
+            throw new Error(`LabWired: Configured runner executable '${runnerExecutable}' is missing or not a file. Build that binary first (Run Test does not compile runner.executable), then check the path in .labwired/lab.yaml.`);
         }
         cli = runnerExecutable;
     } else {

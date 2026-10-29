@@ -284,6 +284,95 @@ describe('model profile lab.yaml', () => {
             fs.rmSync(testScript, { force: true });
         }
     }));
+    it('resolves multi-node inputs.env relative to lab.yaml for a plugin runner profile', () => {
+        var _a;
+        fs.writeFileSync(configFile, [
+            'schema_version: "1.0"',
+            'inputs:',
+            '  env: ../demo/yaml-plus-plugin-env.yaml',
+            'runner:',
+            '  executable: ../target/release/labwired-pro',
+            'debug:',
+            '  adapter:',
+            '    executable: ../target/debug/labwired-pro-dap',
+        ].join('\n') + '\n');
+        const profile = (0, labConfig_1.readLabConfig)(configFile);
+        assert.strictEqual(profile.inputs.env, path.resolve(root, 'demo/yaml-plus-plugin-env.yaml'));
+        assert.strictEqual(profile.inputs.firmware, undefined);
+        assert.strictEqual(profile.inputs.system, undefined);
+        assert.ok((_a = profile.runner) === null || _a === void 0 ? void 0 : _a.executable.includes('labwired-pro'));
+        assert.deepStrictEqual((0, labConfig_1.runTestOverridesForLab)(profile), {});
+    });
+    it('rejects combining inputs.env with single-node firmware or system paths', () => {
+        fs.writeFileSync(configFile, [
+            'schema_version: "1.0"',
+            'inputs:',
+            '  env: ../demo/env.yaml',
+            '  firmware: ../build/a.elf',
+        ].join('\n') + '\n');
+        assert.throws(() => (0, labConfig_1.readLabConfig)(configFile), /inputs\.env cannot be combined/);
+    });
+    it('keeps a YAML-chip-plus-plugin env profile intact for the plugin runner', () => __awaiter(void 0, void 0, void 0, function* () {
+        var _a;
+        // Shape matches the CowManager demo: one filesystem YAML chip node + one
+        // ChipPlugin CPU node. No private IP — only public path names in the fixture.
+        const demoDir = path.join(root, 'demo');
+        fs.mkdirSync(demoDir, { recursive: true });
+        const envPath = path.join(demoDir, 'yaml-plus-plugin-env.yaml');
+        fs.writeFileSync(envPath, [
+            'schema_version: "1.0"',
+            'name: yaml-plus-plugin',
+            'nodes:',
+            '  - id: companion_yaml',
+            '    system: companion-system.yaml',
+            '    firmware: companion.elf',
+            '  - id: plugin_cpu',
+            '    system: plugin-system.yaml',
+            '    firmware: plugin.elf',
+            'interconnects: []',
+        ].join('\n') + '\n');
+        fs.writeFileSync(configFile, [
+            'schema_version: "1.0"',
+            'inputs:',
+            '  env: ../demo/yaml-plus-plugin-env.yaml',
+            'limits:',
+            '  max_steps: 80000',
+            'assertions:',
+            '  - expected_stop_reason: max_steps',
+            'runner:',
+            '  executable: ../target/release/labwired-pro',
+            'debug:',
+            '  adapter:',
+            '    executable: ../target/debug/labwired-pro-dap',
+            '    build:',
+            '      command: cargo',
+            '      args: [build, -p, labwired-pro-dap]',
+            '      cwd: ..',
+        ].join('\n') + '\n');
+        const profile = (0, labConfig_1.readLabConfig)(configFile);
+        assert.ok((_a = profile.inputs.env) === null || _a === void 0 ? void 0 : _a.includes('yaml-plus-plugin-env.yaml'));
+        assert.deepStrictEqual((0, labConfig_1.runTestOverridesForLab)(profile), {});
+        const module = require('../../labConfig');
+        const testScript = yield module.createCoreCompatibleTestScript(configFile);
+        try {
+            const serialized = fs.readFileSync(testScript, 'utf8');
+            assert.ok(serialized.includes('env:'));
+            assert.ok(serialized.includes('yaml-plus-plugin-env.yaml'));
+            assert.ok(serialized.includes('max_steps'));
+            assert.ok(!serialized.includes('debug:'));
+            assert.ok(!serialized.includes('runner:'));
+            assert.ok(!serialized.includes('labwired-pro-dap'));
+            // Relative env path stays relative so core resolves beside the temp script.
+            assert.ok(serialized.includes('../demo/yaml-plus-plugin-env.yaml'));
+        }
+        finally {
+            fs.rmSync(testScript, { force: true });
+        }
+        const envBody = fs.readFileSync(envPath, 'utf8');
+        assert.ok(envBody.includes('companion_yaml'));
+        assert.ok(envBody.includes('plugin_cpu'));
+        assert.ok(envBody.includes('companion-system.yaml'));
+    }));
     it('preserves large YAML integers exactly when creating the core test script', () => __awaiter(void 0, void 0, void 0, function* () {
         const profile = [
             'schema_version: "1.2"',

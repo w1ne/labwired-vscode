@@ -1,6 +1,24 @@
 # Changelog
 
+## 0.15.0
+
+### Multi-node env profiles + install honesty
+
+- **`inputs.env`** profiles (merged as #16): Run Test drives a multi-node
+  environment YAML without `--firmware` / `--system` overrides. Pair with
+  `runner.executable` when a plugin-linked binary is required.
+- **Install**: prefer the GitHub Release `.vsix` when the Marketplace / Open VSX
+  listing is missing or older than this tip. Registries publish only when a
+  `vX.Y.Z` tag runs with `VSCE_PAT` / `OVSX_PAT` set.
+- **Run Test** does not build `runner.executable`. If that path is missing, the
+  error now says to build the binary first (F5 still builds `debug.adapter`
+  when a build block is present).
+- Stock auto-download remains **`v0.25.0`**. Environment scripts that need
+  newer core behaviour must set `runner.executable` (or `labwired.cliPath`) to
+  a tip build until a newer core CLI release is tagged.
+
 ## 0.14.0
+
 
 ### Polish + agent tools on the existing extension
 

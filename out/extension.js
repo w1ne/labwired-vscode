@@ -655,7 +655,7 @@ function activateInner(context) {
     context.subscriptions.push(dashboardBtn);
 }
 function compileAndRun(context, outputChannel, simulatorManager) {
-    var _a, _b;
+    var _a;
     return __awaiter(this, void 0, void 0, function* () {
         const workspaceFolder = (0, workspaceSelection_1.resolveCurrentModelWorkspaceFolder)();
         if (!workspaceFolder) {
@@ -715,14 +715,12 @@ function compileAndRun(context, outputChannel, simulatorManager) {
         const labConfigPath = path.join(rootPath, '.labwired', 'lab.yaml');
         const labDir = path.join(rootPath, '.labwired');
         const outputDir = path.join(labDir, 'out');
-        // The freshly built binary is whatever lab.yaml names as inputs.firmware.
-        // Pass it explicitly as --firmware so a rebuild is always what runs.
-        let firmware;
+        // Single-node profiles pass --firmware so a rebuild is always what runs.
+        // Multi-node inputs.env profiles must not override topology via CLI flags;
+        // ChipPlugin CPUs come from runner.executable (labwired-pro).
         const lab = (0, labConfig_1.readLabConfig)(labConfigPath);
-        if ((_a = lab.inputs) === null || _a === void 0 ? void 0 : _a.firmware) {
-            firmware = lab.inputs.firmware;
-        }
-        const runnerExecutable = (_b = lab.runner) === null || _b === void 0 ? void 0 : _b.executable;
+        const runOverrides = (0, labConfig_1.runTestOverridesForLab)(lab);
+        const runnerExecutable = (_a = lab.runner) === null || _a === void 0 ? void 0 : _a.executable;
         // 4. Run the core TestScript from a temporary copy without extension-only debug settings.
         let cli;
         if (runnerExecutable) {
@@ -730,8 +728,8 @@ function compileAndRun(context, outputChannel, simulatorManager) {
                 if (!fs.statSync(runnerExecutable).isFile())
                     throw new Error('not a file');
             }
-            catch (_c) {
-                throw new Error(`LabWired: Configured runner executable '${runnerExecutable}' is missing. Check runner.executable in .labwired/lab.yaml.`);
+            catch (_b) {
+                throw new Error(`LabWired: Configured runner executable '${runnerExecutable}' is missing or not a file. Build that binary first (Run Test does not compile runner.executable), then check the path in .labwired/lab.yaml.`);
             }
             cli = runnerExecutable;
         }
@@ -753,13 +751,7 @@ function compileAndRun(context, outputChannel, simulatorManager) {
         let coreTestScriptPath;
         try {
             coreTestScriptPath = yield (0, labConfig_1.createCoreCompatibleTestScript)(labConfigPath);
-            ({ exitCode, result } = yield (0, cli_1.runTest)(cli, {
-                script: coreTestScriptPath,
-                cwd: rootPath,
-                outputDir,
-                firmware,
-                apiKey: undefined,
-            }, outputChannel));
+            ({ exitCode, result } = yield (0, cli_1.runTest)(cli, Object.assign(Object.assign({ script: coreTestScriptPath, cwd: rootPath, outputDir }, runOverrides), { apiKey: undefined }), outputChannel));
         }
         catch (e) {
             // Resolving the binary is only half the Run button; this is the half
