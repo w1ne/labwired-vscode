@@ -23,7 +23,7 @@ import { showModelConfigWizard } from './configWizard';
 import { resolveCli, resolveDap, runTest, CLI_BIN, DAP_BIN } from './cli';
 import { binarySourceOf } from './crashFingerprint';
 import { reportCrash } from './crashReport';
-import { findLabConfig, readLabConfig, migrateLabConfig, resolveSystemConfigPath, LabDebugAdapter, createCoreCompatibleTestScript } from './labConfig';
+import { findLabConfig, readLabConfig, migrateLabConfig, resolveSystemConfigPath, LabDebugAdapter, createCoreCompatibleTestScript, runTestOverridesForLab } from './labConfig';
 import { bestFirmware } from './firmware';
 import { RegistersPanel } from './registersPanel';
 import { LabwiredAuthProvider, AUTH_ID, AUTH_LABEL, SCOPES } from './auth';
@@ -819,13 +819,11 @@ async function compileAndRun(context: vscode.ExtensionContext, outputChannel: vs
     const labDir = path.join(rootPath, '.labwired');
     const outputDir = path.join(labDir, 'out');
 
-    // The freshly built binary is whatever lab.yaml names as inputs.firmware.
-    // Pass it explicitly as --firmware so a rebuild is always what runs.
-    let firmware: string | undefined;
+    // Single-node profiles pass --firmware so a rebuild is always what runs.
+    // Multi-node inputs.env profiles must not override topology via CLI flags;
+    // ChipPlugin CPUs come from runner.executable (labwired-pro).
     const lab = readLabConfig(labConfigPath);
-    if (lab.inputs?.firmware) {
-        firmware = lab.inputs.firmware;
-    }
+    const runOverrides = runTestOverridesForLab(lab);
     const runnerExecutable = lab.runner?.executable;
 
     // 4. Run the core TestScript from a temporary copy without extension-only debug settings.
@@ -858,7 +856,7 @@ async function compileAndRun(context: vscode.ExtensionContext, outputChannel: vs
             script: coreTestScriptPath,
             cwd: rootPath,
             outputDir,
-            firmware,
+            ...runOverrides,
             apiKey: undefined,
         }, outputChannel));
     } catch (e) {

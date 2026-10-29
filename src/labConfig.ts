@@ -30,7 +30,7 @@ export interface LabRunner {
 
 export interface LabConfig {
     schema_version: string;
-    inputs: { firmware?: string; system?: string };
+    inputs: { firmware?: string; system?: string; env?: string };
     debug?: { adapter?: LabDebugAdapter };
     runner?: LabRunner;
     limits?: { max_steps?: number };
@@ -55,11 +55,22 @@ export function readLabConfig(file: string): LabConfig {
         throw new Error('lab.yaml inputs must be a mapping.');
     }
     const inputs = (config.inputs || {}) as Record<string, unknown>;
-    for (const field of ['firmware', 'system'] as const) {
+    for (const field of ['firmware', 'system', 'env'] as const) {
         const value = inputs[field];
         if (value !== undefined && (typeof value !== 'string' || value.length === 0)) {
             throw new Error(`lab.yaml inputs.${field} must be a non-empty path string.`);
         }
+    }
+
+    const hasEnv = typeof inputs.env === 'string';
+    const hasSingleNode = typeof inputs.firmware === 'string'
+        || typeof inputs.system === 'string'
+        || typeof inputs.chip === 'string';
+    if (hasEnv && hasSingleNode) {
+        throw new Error(
+            'lab.yaml inputs.env cannot be combined with inputs.firmware, inputs.system, or inputs.chip; '
+            + 'multi-node topology comes exclusively from the environment manifest.'
+        );
     }
 
     if (config.debug !== undefined && !isRecord(config.debug)) {
@@ -125,6 +136,7 @@ export function readLabConfig(file: string): LabConfig {
         inputs: {
             ...(typeof inputs.firmware === 'string' ? { firmware: resolveProfilePath(file, inputs.firmware) } : {}),
             ...(typeof inputs.system === 'string' ? { system: resolveProfilePath(file, inputs.system) } : {}),
+            ...(typeof inputs.env === 'string' ? { env: resolveProfilePath(file, inputs.env) } : {}),
         },
         ...(debug ? { debug: { ...(resolvedAdapter ? { adapter: resolvedAdapter } : {}) } } : {}),
         ...(runner ? { runner: resolvedRunner } : {}),
@@ -180,6 +192,21 @@ export function resolveSystemConfigPath(root: string, activeDebugPath?: unknown)
     const labConfigPath = findLabConfig(root);
     if (!labConfigPath) return undefined;
     return readLabConfig(labConfigPath).inputs?.system;
+}
+
+/**
+ * CLI overrides for `labwired test`. Environment profiles must not pass
+ * --firmware/--system: topology comes only from inputs.env (and the plugin
+ * runner named by runner.executable supplies ChipPlugin CPUs).
+ */
+export function runTestOverridesForLab(lab: LabConfig): { firmware?: string; system?: string } {
+    if (typeof lab.inputs?.env === 'string' && lab.inputs.env.length > 0) {
+        return {};
+    }
+    // Match prior Run Test behavior: only override firmware so a rebuild is what runs.
+    return {
+        ...(typeof lab.inputs?.firmware === 'string' ? { firmware: lab.inputs.firmware } : {}),
+    };
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -287,6 +314,9 @@ export function migrateLabConfig(root: string): 'exists' | 'migrated' | 'created
         }
         if (cfg.inputs.system) {
             cfg.inputs.system = rebaseInput(root, oldScriptDir, cfg.inputs.system);
+        }
+        if (cfg.inputs.env) {
+            cfg.inputs.env = rebaseInput(root, oldScriptDir, cfg.inputs.env);
         }
         writeLabConfig(root, cfg);
         return 'migrated';

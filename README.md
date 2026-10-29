@@ -132,6 +132,35 @@ The executable and working directory paths are also relative to `.labwired/`.
 Omit `debug.adapter` to use the standard LabWired DAP. **LabWired: Configure
 Project…** remains as an alias for the model setup flow.
 
+Omit `debug.adapter` to use the standard LabWired DAP. **LabWired: Configure
+Project…** remains as an alias for the model setup flow.
+
+### Multi-node (YAML chip + plugin CPU)
+
+Core environment scripts use `inputs.env` instead of `inputs.firmware` /
+`inputs.system`. Point `runner.executable` at a plugin-linked binary such as
+`labwired-pro` (from a private delivery repo or release artifact — never put
+private chip IP in a public tree). **Run Test** forwards the environment
+manifest to that runner and does not pass `--firmware` / `--system` overrides.
+
+```yaml
+schema_version: "1.0"
+inputs:
+  env: ../demo/yaml-plus-plugin-env.yaml
+limits:
+  max_steps: 80000
+assertions:
+  - expected_stop_reason: max_steps
+runner:
+  executable: ../target/release/labwired-pro
+debug:
+  adapter:
+    executable: ../target/debug/labwired-pro-dap
+```
+
+F5 debug remains single-machine DAP today; multi-node proof for the demo is
+**Run Test** with the env profile above.
+
 ## Sign in (optional)
 
 Local simulation needs no account. Sign-in uses LabWired’s OAuth (Clerk-backed) at `api.labwired.com` for hosted features only.
