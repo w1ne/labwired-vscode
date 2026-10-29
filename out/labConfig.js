@@ -14,7 +14,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
     });
 };
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.migrateLabConfig = exports.writeLabConfig = exports.resolveProfileExecutablePath = exports.resolveSystemConfigPath = exports.createCoreCompatibleTestScript = exports.readLabConfig = exports.findLabConfig = exports.LAB_CONFIG_REL = void 0;
+exports.migrateLabConfig = exports.writeLabConfig = exports.resolveProfileExecutablePath = exports.runTestOverridesForLab = exports.resolveSystemConfigPath = exports.createCoreCompatibleTestScript = exports.readLabConfig = exports.findLabConfig = exports.LAB_CONFIG_REL = void 0;
 const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
@@ -44,11 +44,19 @@ function readLabConfig(file) {
         throw new Error('lab.yaml inputs must be a mapping.');
     }
     const inputs = (config.inputs || {});
-    for (const field of ['firmware', 'system']) {
+    for (const field of ['firmware', 'system', 'env']) {
         const value = inputs[field];
         if (value !== undefined && (typeof value !== 'string' || value.length === 0)) {
             throw new Error(`lab.yaml inputs.${field} must be a non-empty path string.`);
         }
+    }
+    const hasEnv = typeof inputs.env === 'string';
+    const hasSingleNode = typeof inputs.firmware === 'string'
+        || typeof inputs.system === 'string'
+        || typeof inputs.chip === 'string';
+    if (hasEnv && hasSingleNode) {
+        throw new Error('lab.yaml inputs.env cannot be combined with inputs.firmware, inputs.system, or inputs.chip; '
+            + 'multi-node topology comes exclusively from the environment manifest.');
     }
     if (config.debug !== undefined && !isRecord(config.debug)) {
         throw new Error('lab.yaml debug must be a mapping.');
@@ -97,7 +105,7 @@ function readLabConfig(file) {
         }
         resolvedRunner = { executable: resolveProfileExecutablePath(file, executable) };
     }
-    return Object.assign(Object.assign(Object.assign(Object.assign({}, config), { inputs: Object.assign(Object.assign({}, (typeof inputs.firmware === 'string' ? { firmware: resolveProfilePath(file, inputs.firmware) } : {})), (typeof inputs.system === 'string' ? { system: resolveProfilePath(file, inputs.system) } : {})) }), (debug ? { debug: Object.assign({}, (resolvedAdapter ? { adapter: resolvedAdapter } : {})) } : {})), (runner ? { runner: resolvedRunner } : {}));
+    return Object.assign(Object.assign(Object.assign(Object.assign({}, config), { inputs: Object.assign(Object.assign(Object.assign({}, (typeof inputs.firmware === 'string' ? { firmware: resolveProfilePath(file, inputs.firmware) } : {})), (typeof inputs.system === 'string' ? { system: resolveProfilePath(file, inputs.system) } : {})), (typeof inputs.env === 'string' ? { env: resolveProfilePath(file, inputs.env) } : {})) }), (debug ? { debug: Object.assign({}, (resolvedAdapter ? { adapter: resolvedAdapter } : {})) } : {})), (runner ? { runner: resolvedRunner } : {}));
 }
 exports.readLabConfig = readLabConfig;
 /** Create a disposable core TestScript copy without extension-only debugger settings. */
@@ -149,6 +157,20 @@ function resolveSystemConfigPath(root, activeDebugPath) {
     return (_a = readLabConfig(labConfigPath).inputs) === null || _a === void 0 ? void 0 : _a.system;
 }
 exports.resolveSystemConfigPath = resolveSystemConfigPath;
+/**
+ * CLI overrides for `labwired test`. Environment profiles must not pass
+ * --firmware/--system: topology comes only from inputs.env (and the plugin
+ * runner named by runner.executable supplies ChipPlugin CPUs).
+ */
+function runTestOverridesForLab(lab) {
+    var _a, _b;
+    if (typeof ((_a = lab.inputs) === null || _a === void 0 ? void 0 : _a.env) === 'string' && lab.inputs.env.length > 0) {
+        return {};
+    }
+    // Match prior Run Test behavior: only override firmware so a rebuild is what runs.
+    return Object.assign({}, (typeof ((_b = lab.inputs) === null || _b === void 0 ? void 0 : _b.firmware) === 'string' ? { firmware: lab.inputs.firmware } : {}));
+}
+exports.runTestOverridesForLab = runTestOverridesForLab;
 function isRecord(value) {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
@@ -245,6 +267,9 @@ function migrateLabConfig(root) {
         }
         if (cfg.inputs.system) {
             cfg.inputs.system = rebaseInput(root, oldScriptDir, cfg.inputs.system);
+        }
+        if (cfg.inputs.env) {
+            cfg.inputs.env = rebaseInput(root, oldScriptDir, cfg.inputs.env);
         }
         writeLabConfig(root, cfg);
         return 'migrated';

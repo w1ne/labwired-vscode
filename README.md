@@ -6,25 +6,30 @@ Optionally connect **agent tools** (the same `labwired_*` MCP surface as the Pla
 
 ## Install
 
-- **VS Code** — search *LabWired* in Extensions, or
-  `code --install-extension w1ne.labwired-vscode`
-- **VSCodium, Cursor, Windsurf, Theia** — search *LabWired*; the extension is
-  published to Open VSX as well.
-- **Any editor, no registry** — download `labwired-vscode-<version>.vsix` from the
-  [latest release](https://github.com/w1ne/labwired-vscode/releases/latest) and
-  run *Extensions: Install from VSIX…*
+**Preferred today:** download the `.vsix` from the
+[latest GitHub release](https://github.com/w1ne/labwired-vscode/releases/latest)
+and run **Extensions: Install from VSIX…** (or
+`code --install-extension ./labwired-vscode-<version>.vsix`). Use a release
+whose notes include multi-node `inputs.env` (0.15.0+) when your project profile
+uses `inputs.env`.
 
-For a downloaded VSIX, the CLI also works on Windows and Linux:
+- **VS Code Marketplace** / **Open VSX** — search *LabWired*
+  (`w1ne.labwired-vscode`) when the listing is present and at least as new as
+  this tip. Registries only update when a `vX.Y.Z` tag is pushed with
+  `VSCE_PAT` / `OVSX_PAT` configured; if search finds nothing, use the GitHub
+  `.vsix` above.
+- **Windows x64** — PowerShell:
+  `code --install-extension .\labwired-vscode-<version>.vsix`.
+- **Linux x64 or ARM64** —
+  `code --install-extension ./labwired-vscode-<version>.vsix`.
+- **WSL** — open the project folder through **Remote - WSL**, then install the
+  extension in the WSL extension group (for example **Install in WSL:
+  Ubuntu**). The debugger runs on Linux beside the project files.
 
-- **Windows x64** — in PowerShell, run `code --install-extension .\labwired-vscode-<version>.vsix`.
-- **Linux x64 or ARM64** — run `code --install-extension ./labwired-vscode-<version>.vsix`.
-- **WSL / CowManager** — open the CowManager folder through **Remote - WSL**, then
-  install LabWired in the WSL extension group (for example, **Install in WSL:
-  Ubuntu**). The extension and debugger run on Linux beside the project files.
-
-The runtime also supports macOS x64 and ARM64. It downloads the matching
-simulator and debug adapter on first use; a Rust toolchain is not needed for
-the standard adapter.
+The runtime also supports macOS x64 and ARM64. Without a custom adapter it
+downloads the matching stock simulator and DAP on first use; a Rust toolchain
+is not needed for that path. Profiles that set `runner.executable` or
+`debug.adapter` still need those binaries built (see below).
 
 ## Get started
 
@@ -114,6 +119,12 @@ The path is relative to `lab.yaml`; on Windows, an existing `.exe` is selected
 when the configured path has no extension. **Run Test** uses this executable
 instead of the stock CLI. Omitting `runner` keeps the standard CLI behavior.
 
+**Run Test does not build `runner.executable`.** Build that binary yourself
+before the first Run Test (for example `cargo build -p <runner-crate>
+--release`). If the path is missing, Run Test fails with a clear error naming
+the configured path. F5 is different: when `debug.adapter.build` is set, the
+extension runs that build before every launch.
+
 Models that need a custom DAP can configure its executable and build command in
 the same profile. The build runs before every F5 launch, with arguments passed
 as an array (without a shell):
@@ -129,9 +140,6 @@ debug:
 ```
 
 The executable and working directory paths are also relative to `.labwired/`.
-Omit `debug.adapter` to use the standard LabWired DAP. **LabWired: Configure
-Project…** remains as an alias for the model setup flow.
-
 Omit `debug.adapter` to use the standard LabWired DAP. **LabWired: Configure
 Project…** remains as an alias for the model setup flow.
 
@@ -160,6 +168,11 @@ debug:
 
 F5 debug remains single-machine DAP today; multi-node proof for the demo is
 **Run Test** with the env profile above.
+
+Open the folder that contains `.labwired/lab.yaml` as the workspace root (the
+extension only reads that one path). Stock auto-download is still `v0.25.0`;
+if your env script needs a newer public `labwired`, point `runner.executable`
+or `labwired.cliPath` at a tip build until a newer core CLI tag exists.
 
 ## Sign in (optional)
 
