@@ -33,6 +33,13 @@ describe('custom DAP build', () => {
             cwd: fs.realpathSync(root),
         });
     }));
+    it('streams build output as it arrives', () => __awaiter(void 0, void 0, void 0, function* () {
+        const script = path.join(root, 'stream.js');
+        fs.writeFileSync(script, 'process.stdout.write("one\\n"); process.stderr.write("two\\n");');
+        const chunks = [];
+        yield (0, customDap_1.runCustomDapBuild)({ command: process.execPath, args: [script], cwd: root }, (chunk) => chunks.push(chunk));
+        assert.strictEqual(chunks.join('').split('\n').filter(Boolean).sort().join(','), 'one,two');
+    }));
     it('rejects failed builds with their captured stdout and stderr', () => __awaiter(void 0, void 0, void 0, function* () {
         const script = path.join(root, 'fail.js');
         fs.writeFileSync(script, 'console.log("build output"); console.error("build error"); process.exit(7);');

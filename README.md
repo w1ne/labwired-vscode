@@ -119,11 +119,27 @@ The path is relative to `lab.yaml`; on Windows, an existing `.exe` is selected
 when the configured path has no extension. **Run Test** uses this executable
 instead of the stock CLI. Omitting `runner` keeps the standard CLI behavior.
 
-**Run Test does not build `runner.executable`.** Build that binary yourself
-before the first Run Test (for example `cargo build -p <runner-crate>
---release`). If the path is missing, Run Test fails with a clear error naming
-the configured path. F5 is different: when `debug.adapter.build` is set, the
-extension runs that build before every launch.
+Add a `build` block and **Run Test** builds the runner before every run, the
+same way F5 builds `debug.adapter`. The program gets its arguments as an array
+(no shell), `cwd` is relative to `lab.yaml`, and the output streams into the
+LabWired output channel:
+
+```yaml
+runner:
+  executable: ../target/release/labwired-pro
+  build:
+    command: cargo
+    args: ["build", "-p", "labwired-pro", "--release"]
+    cwd: ..
+```
+
+If the workspace root has a `Cargo.toml` or `Makefile` that is not the
+firmware build (for example a host-side model crate whose firmware ELF is
+committed), set `build: false` at the top level of `lab.yaml` so Run Test skips
+that build.
+
+Without `build`, the runner must exist before the first Run Test; if it is
+missing, Run Test fails with an error naming the configured path.
 
 Models that need a custom DAP can configure its executable and build command in
 the same profile. The build runs before every F5 launch, with arguments passed

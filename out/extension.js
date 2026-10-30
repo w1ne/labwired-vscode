@@ -35,6 +35,7 @@ const cli_1 = require("./cli");
 const crashFingerprint_1 = require("./crashFingerprint");
 const crashReport_1 = require("./crashReport");
 const labConfig_1 = require("./labConfig");
+const projectBuild_1 = require("./projectBuild");
 const firmware_1 = require("./firmware");
 const registersPanel_1 = require("./registersPanel");
 const auth_1 = require("./auth");
@@ -278,11 +279,12 @@ class LabwiredDebugAdapterDescriptorFactory {
                 if (adapter) {
                     if (adapter.build) {
                         try {
-                            const result = yield (0, customDap_1.runCustomDapBuild)(adapter.build);
-                            if (result.stdout)
-                                this.output.append(result.stdout);
-                            if (result.stderr)
-                                this.output.append(result.stderr);
+                            this.output.show(true);
+                            this.output.appendLine(`LabWired: building the debug adapter (${adapter.build.command} ${adapter.build.args.join(' ')})...`);
+                            yield vscode.window.withProgress({
+                                location: vscode.ProgressLocation.Notification,
+                                title: 'LabWired: Building the debug adapter (the first build takes a few minutes)...',
+                            }, () => (0, customDap_1.runCustomDapBuild)(adapter.build, (chunk) => this.output.append(chunk)));
                         }
                         catch (e) {
                             const message = e instanceof Error ? e.message : String(e);
@@ -655,7 +657,7 @@ function activateInner(context) {
     context.subscriptions.push(dashboardBtn);
 }
 function compileAndRun(context, outputChannel, simulatorManager) {
-    var _a;
+    var _a, _b;
     return __awaiter(this, void 0, void 0, function* () {
         const workspaceFolder = (0, workspaceSelection_1.resolveCurrentModelWorkspaceFolder)();
         if (!workspaceFolder) {
@@ -664,45 +666,37 @@ function compileAndRun(context, outputChannel, simulatorManager) {
         const rootPath = workspaceFolder.uri.fsPath;
         // 0. Stop simulator if running
         simulatorManager.stop();
-        // 1. Detect project type. The build target triple comes from the project's own
-        //    .cargo/config.toml (embedded default target) / Makefile — never hardcoded here.
-        const hasCargo = yield fileExists(path.join(rootPath, 'Cargo.toml'));
-        const hasMakefile = yield fileExists(path.join(rootPath, 'Makefile'));
-        let buildCommand;
-        let projectType;
-        if (hasCargo) {
-            projectType = 'Cargo';
-            buildCommand = 'cargo build --release';
-        }
-        else if (hasMakefile) {
-            projectType = 'Makefile';
-            buildCommand = 'make';
-        }
-        else {
-            throw new Error("Could not detect a supported project type (Cargo.toml or Makefile not found)");
-        }
+        // 1. Detect the build. No Cargo.toml / Makefile, or `build: false` in lab.yaml,
+        //    means a lab.yaml over prebuilt ELFs.
+        const labForBuild = (0, labConfig_1.findLabConfig)(rootPath);
+        const build = yield (0, projectBuild_1.detectProjectBuild)(rootPath, fileExists, labForBuild ? (0, labConfig_1.readLabConfig)(labForBuild) : undefined);
         // 2. Build
         outputChannel.show();
-        yield vscode.window.withProgress({
-            location: vscode.ProgressLocation.Notification,
-            title: `LabWired: Building ${projectType} project...`,
-            cancellable: false
-        }, (progress) => __awaiter(this, void 0, void 0, function* () {
-            progress.report({ message: "Running build command..." });
-            return new Promise((resolve, reject) => {
-                const cp = require('child_process');
-                cp.exec(buildCommand, { cwd: rootPath }, (err, stdout, stderr) => {
-                    outputChannel.append(stdout);
-                    outputChannel.append(stderr);
-                    if (err) {
-                        reject(new Error(`Build failed. See LabWired output for details.`));
-                    }
-                    else {
-                        resolve();
-                    }
+        if (build) {
+            yield vscode.window.withProgress({
+                location: vscode.ProgressLocation.Notification,
+                title: `LabWired: Building ${build.projectType} project...`,
+                cancellable: false
+            }, (progress) => __awaiter(this, void 0, void 0, function* () {
+                progress.report({ message: "Running build command..." });
+                return new Promise((resolve, reject) => {
+                    const cp = require('child_process');
+                    cp.exec(build.command, { cwd: rootPath }, (err, stdout, stderr) => {
+                        outputChannel.append(stdout);
+                        outputChannel.append(stderr);
+                        if (err) {
+                            reject(new Error(`Build failed. See LabWired output for details.`));
+                        }
+                        else {
+                            resolve();
+                        }
+                    });
                 });
-            });
-        }));
+            }));
+        }
+        else {
+            outputChannel.appendLine('LabWired: no Cargo.toml or Makefile in this workspace; running .labwired/lab.yaml with its prebuilt firmware.');
+        }
         // 3. Ensure the one-file contract exists (.labwired/lab.yaml).
         const migration = (0, labConfig_1.migrateLabConfig)(rootPath);
         if (migration === 'none') {
@@ -721,6 +715,20 @@ function compileAndRun(context, outputChannel, simulatorManager) {
         const lab = (0, labConfig_1.readLabConfig)(labConfigPath);
         const runOverrides = (0, labConfig_1.runTestOverridesForLab)(lab);
         const runnerExecutable = (_a = lab.runner) === null || _a === void 0 ? void 0 : _a.executable;
+        const runnerBuild = (_b = lab.runner) === null || _b === void 0 ? void 0 : _b.build;
+        if (runnerBuild) {
+            outputChannel.appendLine(`LabWired: building the runner (${runnerBuild.command} ${runnerBuild.args.join(' ')})...`);
+            try {
+                yield vscode.window.withProgress({
+                    location: vscode.ProgressLocation.Notification,
+                    title: 'LabWired: Building the runner (the first build takes a few minutes)...',
+                }, () => (0, customDap_1.runCustomDapBuild)(runnerBuild, (chunk) => outputChannel.append(chunk)));
+            }
+            catch (e) {
+                outputChannel.show();
+                throw new Error('Runner build failed. See LabWired output for details.');
+            }
+        }
         // 4. Run the core TestScript from a temporary copy without extension-only debug settings.
         let cli;
         if (runnerExecutable) {
@@ -728,8 +736,8 @@ function compileAndRun(context, outputChannel, simulatorManager) {
                 if (!fs.statSync(runnerExecutable).isFile())
                     throw new Error('not a file');
             }
-            catch (_b) {
-                throw new Error(`LabWired: Configured runner executable '${runnerExecutable}' is missing or not a file. Build that binary first (Run Test does not compile runner.executable), then check the path in .labwired/lab.yaml.`);
+            catch (_c) {
+                throw new Error(`LabWired: Configured runner executable '${runnerExecutable}' is missing or not a file. Build that binary first, or add a runner.build block to .labwired/lab.yaml so Run Test builds it, then check the path.`);
             }
             cli = runnerExecutable;
         }

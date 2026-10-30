@@ -1,7 +1,7 @@
 {
     "name": "labwired-vscode",
     "displayName": "LabWired",
-    "version": "0.15.0",
+    "version": "0.15.1",
     "license": "MIT",
     "publisher": "w1ne",
     "description": "Debug firmware on a virtual chip (breakpoints, registers, reverse step) and connect shared LabWired agent tools (MCP) for compile / run / verify.",

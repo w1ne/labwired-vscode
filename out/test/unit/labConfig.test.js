@@ -142,6 +142,40 @@ describe('model profile lab.yaml', () => {
             { register: 'STAT' },
         ]);
     });
+    it('reads an optional runner build resolved relative to lab.yaml', () => {
+        var _a;
+        fs.writeFileSync(configFile, [
+            'schema_version: "1.0"',
+            'inputs: {}',
+            'runner:',
+            '  executable: ../target/release/labwired-pro',
+            '  build:',
+            '    command: bash',
+            '    args: ["scripts/setup.sh", "runner"]',
+            '    cwd: ..',
+        ].join('\n'));
+        const profile = (0, labConfig_1.readLabConfig)(configFile);
+        assert.deepStrictEqual((_a = profile.runner) === null || _a === void 0 ? void 0 : _a.build, { command: 'bash', args: ['scripts/setup.sh', 'runner'], cwd: root });
+    });
+    it('rejects a malformed runner build', () => {
+        fs.writeFileSync(configFile, 'schema_version: "1.0"\ninputs: {}\nrunner:\n  executable: x\n  build:\n    command: bash\n    args: bash\n');
+        assert.throws(() => (0, labConfig_1.readLabConfig)(configFile), /runner\.build\.args must be an array of strings/);
+    });
+    it('reads build: false and keeps it out of the core script', () => __awaiter(void 0, void 0, void 0, function* () {
+        fs.writeFileSync(configFile, 'schema_version: "1.0"\ninputs: {}\nbuild: false\nlimits:\n  max_steps: 10\n');
+        assert.strictEqual((0, labConfig_1.readLabConfig)(configFile).build, false);
+        const script = yield require('../../labConfig').createCoreCompatibleTestScript(configFile);
+        try {
+            assert.ok(!fs.readFileSync(script, 'utf8').includes('build'));
+        }
+        finally {
+            fs.rmSync(script, { force: true });
+        }
+    }));
+    it('rejects a build value other than false', () => {
+        fs.writeFileSync(configFile, 'schema_version: "1.0"\ninputs: {}\nbuild: true\n');
+        assert.throws(() => (0, labConfig_1.readLabConfig)(configFile), /lab\.yaml build may only be false/);
+    });
     it('rejects malformed runner profile fields', () => {
         fs.writeFileSync(configFile, 'schema_version: "1.0"\ninputs: {}\nrunner: []\n');
         assert.throws(() => (0, labConfig_1.readLabConfig)(configFile), /lab\.yaml runner must be a mapping/);
