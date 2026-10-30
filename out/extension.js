@@ -35,6 +35,7 @@ const cli_1 = require("./cli");
 const crashFingerprint_1 = require("./crashFingerprint");
 const crashReport_1 = require("./crashReport");
 const labConfig_1 = require("./labConfig");
+const projectBuild_1 = require("./projectBuild");
 const firmware_1 = require("./firmware");
 const registersPanel_1 = require("./registersPanel");
 const auth_1 = require("./auth");
@@ -664,45 +665,35 @@ function compileAndRun(context, outputChannel, simulatorManager) {
         const rootPath = workspaceFolder.uri.fsPath;
         // 0. Stop simulator if running
         simulatorManager.stop();
-        // 1. Detect project type. The build target triple comes from the project's own
-        //    .cargo/config.toml (embedded default target) / Makefile — never hardcoded here.
-        const hasCargo = yield fileExists(path.join(rootPath, 'Cargo.toml'));
-        const hasMakefile = yield fileExists(path.join(rootPath, 'Makefile'));
-        let buildCommand;
-        let projectType;
-        if (hasCargo) {
-            projectType = 'Cargo';
-            buildCommand = 'cargo build --release';
-        }
-        else if (hasMakefile) {
-            projectType = 'Makefile';
-            buildCommand = 'make';
-        }
-        else {
-            throw new Error("Could not detect a supported project type (Cargo.toml or Makefile not found)");
-        }
+        // 1. Detect the build. No Cargo.toml / Makefile means a lab.yaml over prebuilt ELFs.
+        const build = yield (0, projectBuild_1.detectProjectBuild)(rootPath, fileExists);
         // 2. Build
         outputChannel.show();
-        yield vscode.window.withProgress({
-            location: vscode.ProgressLocation.Notification,
-            title: `LabWired: Building ${projectType} project...`,
-            cancellable: false
-        }, (progress) => __awaiter(this, void 0, void 0, function* () {
-            progress.report({ message: "Running build command..." });
-            return new Promise((resolve, reject) => {
-                const cp = require('child_process');
-                cp.exec(buildCommand, { cwd: rootPath }, (err, stdout, stderr) => {
-                    outputChannel.append(stdout);
-                    outputChannel.append(stderr);
-                    if (err) {
-                        reject(new Error(`Build failed. See LabWired output for details.`));
-                    }
-                    else {
-                        resolve();
-                    }
+        if (build) {
+            yield vscode.window.withProgress({
+                location: vscode.ProgressLocation.Notification,
+                title: `LabWired: Building ${build.projectType} project...`,
+                cancellable: false
+            }, (progress) => __awaiter(this, void 0, void 0, function* () {
+                progress.report({ message: "Running build command..." });
+                return new Promise((resolve, reject) => {
+                    const cp = require('child_process');
+                    cp.exec(build.command, { cwd: rootPath }, (err, stdout, stderr) => {
+                        outputChannel.append(stdout);
+                        outputChannel.append(stderr);
+                        if (err) {
+                            reject(new Error(`Build failed. See LabWired output for details.`));
+                        }
+                        else {
+                            resolve();
+                        }
+                    });
                 });
-            });
-        }));
+            }));
+        }
+        else {
+            outputChannel.appendLine('LabWired: no Cargo.toml or Makefile in this workspace; running .labwired/lab.yaml with its prebuilt firmware.');
+        }
         // 3. Ensure the one-file contract exists (.labwired/lab.yaml).
         const migration = (0, labConfig_1.migrateLabConfig)(rootPath);
         if (migration === 'none') {
