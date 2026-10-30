@@ -306,9 +306,12 @@ export class LabwiredDebugAdapterDescriptorFactory implements vscode.DebugAdapte
             if (adapter) {
                 if (adapter.build) {
                     try {
-                        const result = await runCustomDapBuild(adapter.build);
-                        if (result.stdout) this.output.append(result.stdout);
-                        if (result.stderr) this.output.append(result.stderr);
+                        this.output.show(true);
+                        this.output.appendLine(`LabWired: building the debug adapter (${adapter.build.command} ${adapter.build.args.join(' ')})...`);
+                        await vscode.window.withProgress({
+                            location: vscode.ProgressLocation.Notification,
+                            title: 'LabWired: Building the debug adapter (the first build takes a few minutes)...',
+                        }, () => runCustomDapBuild(adapter!.build!, (chunk) => this.output.append(chunk)));
                     } catch (e) {
                         const message = e instanceof Error ? e.message : String(e);
                         this.output.appendLine(message);
@@ -815,6 +818,19 @@ async function compileAndRun(context: vscode.ExtensionContext, outputChannel: vs
     const lab = readLabConfig(labConfigPath);
     const runOverrides = runTestOverridesForLab(lab);
     const runnerExecutable = lab.runner?.executable;
+    const runnerBuild = lab.runner?.build;
+    if (runnerBuild) {
+        outputChannel.appendLine(`LabWired: building the runner (${runnerBuild.command} ${runnerBuild.args.join(' ')})...`);
+        try {
+            await vscode.window.withProgress({
+                location: vscode.ProgressLocation.Notification,
+                title: 'LabWired: Building the runner (the first build takes a few minutes)...',
+            }, () => runCustomDapBuild(runnerBuild, (chunk) => outputChannel.append(chunk)));
+        } catch (e) {
+            outputChannel.show();
+            throw new Error('Runner build failed. See LabWired output for details.');
+        }
+    }
 
     // 4. Run the core TestScript from a temporary copy without extension-only debug settings.
     let cli: string;
@@ -822,7 +838,7 @@ async function compileAndRun(context: vscode.ExtensionContext, outputChannel: vs
         try {
             if (!fs.statSync(runnerExecutable).isFile()) throw new Error('not a file');
         } catch {
-            throw new Error(`LabWired: Configured runner executable '${runnerExecutable}' is missing or not a file. Build that binary first (Run Test does not compile runner.executable), then check the path in .labwired/lab.yaml.`);
+            throw new Error(`LabWired: Configured runner executable '${runnerExecutable}' is missing or not a file. Build that binary first, or add a runner.build block to .labwired/lab.yaml so Run Test builds it, then check the path.`);
         }
         cli = runnerExecutable;
     } else {

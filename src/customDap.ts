@@ -21,7 +21,8 @@ export function customDapExecutablePath(configuredPath: string, platform = proce
     return fs.existsSync(windowsPath) ? windowsPath : configuredPath;
 }
 
-export function runCustomDapBuild(build: CustomDapBuild): Promise<CustomDapBuildResult> {
+/** `onOutput` receives stdout and stderr as they arrive, for long first builds. */
+export function runCustomDapBuild(build: CustomDapBuild, onOutput?: (chunk: string) => void): Promise<CustomDapBuildResult> {
     return new Promise((resolve, reject) => {
         const child = spawn(build.command, build.args, { cwd: build.cwd, shell: false });
         let stdout = '';
@@ -29,9 +30,11 @@ export function runCustomDapBuild(build: CustomDapBuild): Promise<CustomDapBuild
 
         child.stdout.on('data', (data: Buffer | string) => {
             stdout += data.toString();
+            onOutput?.(data.toString());
         });
         child.stderr.on('data', (data: Buffer | string) => {
             stderr += data.toString();
+            onOutput?.(data.toString());
         });
         child.on('error', (error) => {
             reject(new Error(`Could not run custom DAP build program '${build.command}': ${error.message}`));

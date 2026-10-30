@@ -160,6 +160,27 @@ describe('model profile lab.yaml', () => {
         ]);
     });
 
+    it('reads an optional runner build resolved relative to lab.yaml', () => {
+        fs.writeFileSync(configFile, [
+            'schema_version: "1.0"',
+            'inputs: {}',
+            'runner:',
+            '  executable: ../target/release/labwired-pro',
+            '  build:',
+            '    command: bash',
+            '    args: ["scripts/setup.sh", "runner"]',
+            '    cwd: ..',
+        ].join('\n'));
+
+        const profile = readLabConfig(configFile);
+        assert.deepStrictEqual(profile.runner?.build, { command: 'bash', args: ['scripts/setup.sh', 'runner'], cwd: root });
+    });
+
+    it('rejects a malformed runner build', () => {
+        fs.writeFileSync(configFile, 'schema_version: "1.0"\ninputs: {}\nrunner:\n  executable: x\n  build:\n    command: bash\n    args: bash\n');
+        assert.throws(() => readLabConfig(configFile), /runner\.build\.args must be an array of strings/);
+    });
+
     it('rejects malformed runner profile fields', () => {
         fs.writeFileSync(configFile, 'schema_version: "1.0"\ninputs: {}\nrunner: []\n');
         assert.throws(() => readLabConfig(configFile), /lab\.yaml runner must be a mapping/);

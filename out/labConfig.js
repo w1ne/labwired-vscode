@@ -33,6 +33,24 @@ function findLabConfig(root) {
     return fs.existsSync(canonical) ? canonical : undefined;
 }
 exports.findLabConfig = findLabConfig;
+function parseBuildBlock(file, value, key) {
+    if (value === undefined) {
+        return undefined;
+    }
+    if (!isRecord(value)) {
+        throw new Error(`lab.yaml ${key} must be a mapping.`);
+    }
+    if (typeof value.command !== 'string' || value.command.length === 0) {
+        throw new Error(`lab.yaml ${key}.command must be a non-empty program string.`);
+    }
+    if (!Array.isArray(value.args) || !value.args.every((arg) => typeof arg === 'string')) {
+        throw new Error(`lab.yaml ${key}.args must be an array of strings.`);
+    }
+    if (value.cwd !== undefined && (typeof value.cwd !== 'string' || value.cwd.length === 0)) {
+        throw new Error(`lab.yaml ${key}.cwd must be a non-empty path string.`);
+    }
+    return Object.assign({ command: value.command, args: value.args }, (typeof value.cwd === 'string' ? { cwd: resolveProfilePath(file, value.cwd) } : {}));
+}
 function readLabConfig(file) {
     const raw = fs.readFileSync(file, 'utf8');
     const parsed = yaml.load(raw, { schema: LAB_PROFILE_SCHEMA });
@@ -78,23 +96,7 @@ function readLabConfig(file) {
         if (typeof adapter.executable !== 'string' || adapter.executable.length === 0) {
             throw new Error('lab.yaml debug.adapter.executable must be a non-empty path string.');
         }
-        let build;
-        if (adapter.build !== undefined) {
-            if (!isRecord(adapter.build)) {
-                throw new Error('lab.yaml debug.adapter.build must be a mapping.');
-            }
-            const rawBuild = adapter.build;
-            if (typeof rawBuild.command !== 'string' || rawBuild.command.length === 0) {
-                throw new Error('lab.yaml debug.adapter.build.command must be a non-empty program string.');
-            }
-            if (!Array.isArray(rawBuild.args) || !rawBuild.args.every((arg) => typeof arg === 'string')) {
-                throw new Error('lab.yaml debug.adapter.build.args must be an array of strings.');
-            }
-            if (rawBuild.cwd !== undefined && (typeof rawBuild.cwd !== 'string' || rawBuild.cwd.length === 0)) {
-                throw new Error('lab.yaml debug.adapter.build.cwd must be a non-empty path string.');
-            }
-            build = Object.assign({ command: rawBuild.command, args: rawBuild.args }, (typeof rawBuild.cwd === 'string' ? { cwd: resolveProfilePath(file, rawBuild.cwd) } : {}));
-        }
+        const build = parseBuildBlock(file, adapter.build, 'debug.adapter.build');
         resolvedAdapter = Object.assign({ executable: resolveProfilePath(file, adapter.executable) }, (build ? { build } : {}));
     }
     let resolvedRunner;
@@ -103,7 +105,8 @@ function readLabConfig(file) {
         if (typeof executable !== 'string' || executable.trim().length === 0) {
             throw new Error('lab.yaml runner.executable must be a non-empty path string.');
         }
-        resolvedRunner = { executable: resolveProfileExecutablePath(file, executable) };
+        const build = parseBuildBlock(file, runner.build, 'runner.build');
+        resolvedRunner = Object.assign({ executable: resolveProfileExecutablePath(file, executable) }, (build ? { build } : {}));
     }
     return Object.assign(Object.assign(Object.assign(Object.assign({}, config), { inputs: Object.assign(Object.assign(Object.assign({}, (typeof inputs.firmware === 'string' ? { firmware: resolveProfilePath(file, inputs.firmware) } : {})), (typeof inputs.system === 'string' ? { system: resolveProfilePath(file, inputs.system) } : {})), (typeof inputs.env === 'string' ? { env: resolveProfilePath(file, inputs.env) } : {})) }), (debug ? { debug: Object.assign({}, (resolvedAdapter ? { adapter: resolvedAdapter } : {})) } : {})), (runner ? { runner: resolvedRunner } : {}));
 }

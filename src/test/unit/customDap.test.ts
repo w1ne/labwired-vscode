@@ -29,6 +29,16 @@ describe('custom DAP build', () => {
         });
     });
 
+    it('streams build output as it arrives', async () => {
+        const script = path.join(root, 'stream.js');
+        fs.writeFileSync(script, 'process.stdout.write("one\\n"); process.stderr.write("two\\n");');
+        const chunks: string[] = [];
+
+        await runCustomDapBuild({ command: process.execPath, args: [script], cwd: root }, (chunk) => chunks.push(chunk));
+
+        assert.strictEqual(chunks.join('').split('\n').filter(Boolean).sort().join(','), 'one,two');
+    });
+
     it('rejects failed builds with their captured stdout and stderr', async () => {
         const script = path.join(root, 'fail.js');
         fs.writeFileSync(script, 'console.log("build output"); console.error("build error"); process.exit(7);');

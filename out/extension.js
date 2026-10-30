@@ -279,11 +279,12 @@ class LabwiredDebugAdapterDescriptorFactory {
                 if (adapter) {
                     if (adapter.build) {
                         try {
-                            const result = yield (0, customDap_1.runCustomDapBuild)(adapter.build);
-                            if (result.stdout)
-                                this.output.append(result.stdout);
-                            if (result.stderr)
-                                this.output.append(result.stderr);
+                            this.output.show(true);
+                            this.output.appendLine(`LabWired: building the debug adapter (${adapter.build.command} ${adapter.build.args.join(' ')})...`);
+                            yield vscode.window.withProgress({
+                                location: vscode.ProgressLocation.Notification,
+                                title: 'LabWired: Building the debug adapter (the first build takes a few minutes)...',
+                            }, () => (0, customDap_1.runCustomDapBuild)(adapter.build, (chunk) => this.output.append(chunk)));
                         }
                         catch (e) {
                             const message = e instanceof Error ? e.message : String(e);
@@ -656,7 +657,7 @@ function activateInner(context) {
     context.subscriptions.push(dashboardBtn);
 }
 function compileAndRun(context, outputChannel, simulatorManager) {
-    var _a;
+    var _a, _b;
     return __awaiter(this, void 0, void 0, function* () {
         const workspaceFolder = (0, workspaceSelection_1.resolveCurrentModelWorkspaceFolder)();
         if (!workspaceFolder) {
@@ -712,6 +713,20 @@ function compileAndRun(context, outputChannel, simulatorManager) {
         const lab = (0, labConfig_1.readLabConfig)(labConfigPath);
         const runOverrides = (0, labConfig_1.runTestOverridesForLab)(lab);
         const runnerExecutable = (_a = lab.runner) === null || _a === void 0 ? void 0 : _a.executable;
+        const runnerBuild = (_b = lab.runner) === null || _b === void 0 ? void 0 : _b.build;
+        if (runnerBuild) {
+            outputChannel.appendLine(`LabWired: building the runner (${runnerBuild.command} ${runnerBuild.args.join(' ')})...`);
+            try {
+                yield vscode.window.withProgress({
+                    location: vscode.ProgressLocation.Notification,
+                    title: 'LabWired: Building the runner (the first build takes a few minutes)...',
+                }, () => (0, customDap_1.runCustomDapBuild)(runnerBuild, (chunk) => outputChannel.append(chunk)));
+            }
+            catch (e) {
+                outputChannel.show();
+                throw new Error('Runner build failed. See LabWired output for details.');
+            }
+        }
         // 4. Run the core TestScript from a temporary copy without extension-only debug settings.
         let cli;
         if (runnerExecutable) {
@@ -719,8 +734,8 @@ function compileAndRun(context, outputChannel, simulatorManager) {
                 if (!fs.statSync(runnerExecutable).isFile())
                     throw new Error('not a file');
             }
-            catch (_b) {
-                throw new Error(`LabWired: Configured runner executable '${runnerExecutable}' is missing or not a file. Build that binary first (Run Test does not compile runner.executable), then check the path in .labwired/lab.yaml.`);
+            catch (_c) {
+                throw new Error(`LabWired: Configured runner executable '${runnerExecutable}' is missing or not a file. Build that binary first, or add a runner.build block to .labwired/lab.yaml so Run Test builds it, then check the path.`);
             }
             cli = runnerExecutable;
         }
