@@ -35,6 +35,8 @@ export interface LabConfig {
     inputs: { firmware?: string; system?: string; env?: string };
     debug?: { adapter?: LabDebugAdapter };
     runner?: LabRunner;
+    /** `false` skips Run Test's project build (Cargo.toml / Makefile). */
+    build?: false;
     limits?: { max_steps?: number };
     assertions?: any[];
 }
@@ -127,6 +129,10 @@ export function readLabConfig(file: string): LabConfig {
         };
     }
 
+    if (config.build !== undefined && config.build !== false) {
+        throw new Error('lab.yaml build may only be false (skip the project build before Run Test).');
+    }
+
     let resolvedRunner: LabRunner | undefined;
     if (runner) {
         const executable = runner.executable;
@@ -155,7 +161,7 @@ export function readLabConfig(file: string): LabConfig {
 /** Create a disposable core TestScript copy without extension-only debugger settings. */
 export async function createCoreCompatibleTestScript(labConfigPath: string): Promise<string> {
     const raw = await fs.promises.readFile(labConfigPath, 'utf8');
-    const coreScript = removeTopLevelYamlEntries(raw, ['debug', 'runner']);
+    const coreScript = removeTopLevelYamlEntries(raw, ['debug', 'runner', 'build']);
     const parent = path.dirname(labConfigPath);
     const tempPath = path.join(
         parent,

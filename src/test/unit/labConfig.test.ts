@@ -181,6 +181,22 @@ describe('model profile lab.yaml', () => {
         assert.throws(() => readLabConfig(configFile), /runner\.build\.args must be an array of strings/);
     });
 
+    it('reads build: false and keeps it out of the core script', async () => {
+        fs.writeFileSync(configFile, 'schema_version: "1.0"\ninputs: {}\nbuild: false\nlimits:\n  max_steps: 10\n');
+        assert.strictEqual(readLabConfig(configFile).build, false);
+        const script = await require('../../labConfig').createCoreCompatibleTestScript(configFile);
+        try {
+            assert.ok(!fs.readFileSync(script, 'utf8').includes('build'));
+        } finally {
+            fs.rmSync(script, { force: true });
+        }
+    });
+
+    it('rejects a build value other than false', () => {
+        fs.writeFileSync(configFile, 'schema_version: "1.0"\ninputs: {}\nbuild: true\n');
+        assert.throws(() => readLabConfig(configFile), /lab\.yaml build may only be false/);
+    });
+
     it('rejects malformed runner profile fields', () => {
         fs.writeFileSync(configFile, 'schema_version: "1.0"\ninputs: {}\nrunner: []\n');
         assert.throws(() => readLabConfig(configFile), /lab\.yaml runner must be a mapping/);

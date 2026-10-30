@@ -99,6 +99,9 @@ function readLabConfig(file) {
         const build = parseBuildBlock(file, adapter.build, 'debug.adapter.build');
         resolvedAdapter = Object.assign({ executable: resolveProfilePath(file, adapter.executable) }, (build ? { build } : {}));
     }
+    if (config.build !== undefined && config.build !== false) {
+        throw new Error('lab.yaml build may only be false (skip the project build before Run Test).');
+    }
     let resolvedRunner;
     if (runner) {
         const executable = runner.executable;
@@ -115,7 +118,7 @@ exports.readLabConfig = readLabConfig;
 function createCoreCompatibleTestScript(labConfigPath) {
     return __awaiter(this, void 0, void 0, function* () {
         const raw = yield fs.promises.readFile(labConfigPath, 'utf8');
-        const coreScript = removeTopLevelYamlEntries(raw, ['debug', 'runner']);
+        const coreScript = removeTopLevelYamlEntries(raw, ['debug', 'runner', 'build']);
         const parent = path.dirname(labConfigPath);
         const tempPath = path.join(parent, `.labwired-test-${process.pid}-${crypto.randomBytes(12).toString('hex')}.yaml`);
         yield fs.promises.writeFile(tempPath, coreScript, { flag: 'wx', mode: 0o600 });

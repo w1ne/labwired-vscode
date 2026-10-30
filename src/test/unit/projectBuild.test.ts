@@ -38,6 +38,11 @@ describe('project build detection', () => {
         assert.deepStrictEqual(await detectProjectBuild(root, exists), { projectType: 'Makefile', command: 'make' });
     });
 
+    it('skips the build when lab.yaml sets build: false, even with a Cargo.toml', async () => {
+        fs.writeFileSync(path.join(root, 'Cargo.toml'), '');
+        assert.strictEqual(await detectProjectBuild(root, exists, { build: false }), null);
+    });
+
     it('has no build step for a lab.yaml-only workspace', async () => {
         fs.mkdirSync(path.join(root, '.labwired'));
         fs.writeFileSync(path.join(root, '.labwired', 'lab.yaml'), 'schema_version: "1.0"\n');

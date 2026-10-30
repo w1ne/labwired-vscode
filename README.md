@@ -133,6 +133,11 @@ runner:
     cwd: ..
 ```
 
+If the workspace root has a `Cargo.toml` or `Makefile` that is not the
+firmware build (for example a host-side model crate whose firmware ELF is
+committed), set `build: false` at the top level of `lab.yaml` so Run Test skips
+that build.
+
 Without `build`, the runner must exist before the first Run Test; if it is
 missing, Run Test fails with an error naming the configured path.
 

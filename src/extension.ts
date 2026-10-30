@@ -762,8 +762,10 @@ async function compileAndRun(context: vscode.ExtensionContext, outputChannel: vs
     // 0. Stop simulator if running
     simulatorManager.stop();
 
-    // 1. Detect the build. No Cargo.toml / Makefile means a lab.yaml over prebuilt ELFs.
-    const build = await detectProjectBuild(rootPath, fileExists);
+    // 1. Detect the build. No Cargo.toml / Makefile, or `build: false` in lab.yaml,
+    //    means a lab.yaml over prebuilt ELFs.
+    const labForBuild = findLabConfig(rootPath);
+    const build = await detectProjectBuild(rootPath, fileExists, labForBuild ? readLabConfig(labForBuild) : undefined);
 
     // 2. Build
     outputChannel.show();

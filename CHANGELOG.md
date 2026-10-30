@@ -9,6 +9,8 @@
 - **`runner.build`**: a lab.yaml runner can carry a build block like
   `debug.adapter.build`; Run Test builds the runner before it runs, so a fresh
   clone works without a manual `cargo build`.
+- **`build: false`** at the top level of lab.yaml skips Run Test's project
+  build when the root `Cargo.toml` / `Makefile` is not the firmware build.
 - Runner and debug-adapter builds stream their output to the LabWired channel
   with a progress notification, instead of printing it only when they finish.
 
