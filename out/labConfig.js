@@ -15,6 +15,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.migrateLabConfig = exports.writeLabConfig = exports.resolveProfileExecutablePath = exports.runTestOverridesForLab = exports.resolveSystemConfigPath = exports.createCoreCompatibleTestScript = exports.readLabConfig = exports.findLabConfig = exports.LAB_CONFIG_REL = void 0;
+const platformAssets_1 = require("./platformAssets");
 const path = require("path");
 const fs = require("fs");
 const crypto = require("crypto");
@@ -97,7 +98,7 @@ function readLabConfig(file) {
             throw new Error('lab.yaml debug.adapter.executable must be a non-empty path string.');
         }
         const build = parseBuildBlock(file, adapter.build, 'debug.adapter.build');
-        resolvedAdapter = Object.assign({ executable: resolveProfilePath(file, adapter.executable) }, (build ? { build } : {}));
+        resolvedAdapter = Object.assign({ executable: resolveProfilePath(file, expandPlatform(adapter.executable, process.platform, process.arch)) }, (build ? { build } : {}));
     }
     if (config.build !== undefined && config.build !== false) {
         throw new Error('lab.yaml build may only be false (skip the project build before Run Test).');
@@ -180,14 +181,28 @@ exports.runTestOverridesForLab = runTestOverridesForLab;
 function isRecord(value) {
     return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
-function resolveProfileExecutablePath(configFile, value, platform = process.platform) {
-    const resolvedPath = resolveProfilePath(configFile, value);
+function resolveProfileExecutablePath(configFile, value, platform = process.platform, arch = process.arch) {
+    const resolvedPath = resolveProfilePath(configFile, expandPlatform(value, platform, arch));
     if (platform === 'win32' && path.extname(resolvedPath).length === 0 && fs.existsSync(`${resolvedPath}.exe`)) {
         return `${resolvedPath}.exe`;
     }
     return resolvedPath;
 }
 exports.resolveProfileExecutablePath = resolveProfileExecutablePath;
+/**
+ * `${platform}` in a lab.yaml path becomes the platform name core releases
+ * use (linux-x86_64, darwin-aarch64, windows-x86_64, ...), so a repository
+ * can ship one bin/<platform>/ directory per OS behind a single lab.yaml.
+ */
+function expandPlatform(value, platform, arch) {
+    if (!value.includes('${platform}'))
+        return value;
+    const slug = (0, platformAssets_1.assetFor)(platform, arch);
+    if (!slug) {
+        throw new Error(`lab.yaml path '${value}' uses \${platform}, but LabWired publishes no binaries for ${platform}/${arch}.`);
+    }
+    return value.split('${platform}').join(slug);
+}
 function resolveProfilePath(configFile, value) {
     return path.isAbsolute(value) ? value : path.resolve(path.dirname(configFile), value);
 }

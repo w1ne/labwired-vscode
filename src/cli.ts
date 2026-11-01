@@ -10,6 +10,7 @@ import * as fs from 'fs';
 import * as https from 'https';
 import { spawn, spawnSync } from 'child_process';
 import { assetFor } from './platformAssets';
+import { stripAnsi } from './ansi';
 import { setBinarySource, type BinarySource } from './crashFingerprint';
 
 // The core release this extension downloads. Kept at the newest release on
@@ -297,15 +298,15 @@ export async function runTest(
         args.push('--system', opts.system);
     }
 
-    const env = { ...process.env, ...(opts.apiKey ? { LABWIRED_API_KEY: opts.apiKey } : {}) };
+    const env = { ...process.env, NO_COLOR: '1', ...(opts.apiKey ? { LABWIRED_API_KEY: opts.apiKey } : {}) };
 
     log(output, `Running: ${cli} ${args.join(' ')}`);
 
     return new Promise<TestResult>((resolve, reject) => {
         const child = spawn(cli, args, { cwd: opts.cwd, env });
 
-        child.stdout.on('data', (data: Buffer) => output.append(data.toString()));
-        child.stderr.on('data', (data: Buffer) => output.append(data.toString()));
+        child.stdout.on('data', (data: Buffer) => output.append(stripAnsi(data.toString())));
+        child.stderr.on('data', (data: Buffer) => output.append(stripAnsi(data.toString())));
 
         child.on('error', reject);
 

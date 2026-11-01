@@ -1,0 +1,1 @@
+{"version":3,"file":"ansi.js","sourceRoot":"","sources":["../src/ansi.ts"],"names":[],"mappings":";;;AAAA,6EAA6E;AAC7E,2EAA2E;AAC3E,gDAAgD;AAChD,MAAM,WAAW,GAAG,yBAAyB,CAAC;AAE9C,SAAgB,SAAS,CAAC,IAAY;IAClC,OAAO,IAAI,CAAC,OAAO,CAAC,WAAW,EAAE,EAAE,CAAC,CAAC;AACzC,CAAC;AAFD,8BAEC"}

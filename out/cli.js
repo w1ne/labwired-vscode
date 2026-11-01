@@ -21,6 +21,7 @@ const fs = require("fs");
 const https = require("https");
 const child_process_1 = require("child_process");
 const platformAssets_1 = require("./platformAssets");
+const ansi_1 = require("./ansi");
 const crashFingerprint_1 = require("./crashFingerprint");
 // The core release this extension downloads. Kept at the newest release on
 // purpose: pinning two releases back is how the debugger shipped against a CLI
@@ -256,12 +257,12 @@ function runTest(cli, opts, output) {
         if (opts.system) {
             args.push('--system', opts.system);
         }
-        const env = Object.assign(Object.assign({}, process.env), (opts.apiKey ? { LABWIRED_API_KEY: opts.apiKey } : {}));
+        const env = Object.assign(Object.assign(Object.assign({}, process.env), { NO_COLOR: '1' }), (opts.apiKey ? { LABWIRED_API_KEY: opts.apiKey } : {}));
         log(output, `Running: ${cli} ${args.join(' ')}`);
         return new Promise((resolve, reject) => {
             const child = (0, child_process_1.spawn)(cli, args, { cwd: opts.cwd, env });
-            child.stdout.on('data', (data) => output.append(data.toString()));
-            child.stderr.on('data', (data) => output.append(data.toString()));
+            child.stdout.on('data', (data) => output.append((0, ansi_1.stripAnsi)(data.toString())));
+            child.stderr.on('data', (data) => output.append((0, ansi_1.stripAnsi)(data.toString())));
             child.on('error', reject);
             child.on('close', (code) => {
                 const exitCode = code !== null && code !== void 0 ? code : -1;
