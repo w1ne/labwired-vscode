@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.15.2
+
+- **`${platform}`** in `runner.executable` and `debug.adapter.executable`
+  expands to the core release platform name (`linux-x86_64`,
+  `darwin-aarch64`, `windows-x86_64`, ...), so a repository can ship
+  prebuilt binaries for every OS behind one lab.yaml.
+- **Run Test leads with the verdict**: `PASS 9/9 checks` and one line per
+  check. The runner's full log is shown only when a check fails, and is
+  always saved to `runner.log` in the output directory.
+- Run Test output no longer shows terminal colour codes: the runner gets
+  `NO_COLOR=1` and any escape codes left are stripped.
+
 ## 0.15.1
 
 - **Run Test** no longer requires a `Cargo.toml` or `Makefile`. A workspace

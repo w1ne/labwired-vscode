@@ -101,6 +101,16 @@ describe('model profile lab.yaml', () => {
         assert.strictEqual(profile.runner.executable, process.platform === 'win32' ? `${runnerPath}.exe` : runnerPath);
         assert.strictEqual(require('../../labConfig').resolveProfileExecutablePath(configFile, '../target/release/labwired-pro', 'win32'), `${runnerPath}.exe`);
     });
+    it('expands ${platform} to the core release platform name, so one lab.yaml serves every OS', () => {
+        const { resolveProfileExecutablePath } = require('../../labConfig');
+        const winRunner = path.resolve(root, 'bin', 'windows-x86_64', 'labwired-pro');
+        fs.mkdirSync(path.dirname(winRunner), { recursive: true });
+        fs.writeFileSync(`${winRunner}.exe`, 'runner');
+        assert.strictEqual(resolveProfileExecutablePath(configFile, '../bin/${platform}/labwired-pro', 'linux', 'x64'), path.resolve(root, 'bin', 'linux-x86_64', 'labwired-pro'));
+        assert.strictEqual(resolveProfileExecutablePath(configFile, '../bin/${platform}/labwired-pro', 'darwin', 'arm64'), path.resolve(root, 'bin', 'darwin-aarch64', 'labwired-pro'));
+        assert.strictEqual(resolveProfileExecutablePath(configFile, '../bin/${platform}/labwired-pro', 'win32', 'x64'), `${winRunner}.exe`);
+        assert.throws(() => resolveProfileExecutablePath(configFile, '../bin/${platform}/labwired-pro', 'linux', 'riscv64'), /linux\/riscv64/);
+    });
     it('reads extension profile fields from core scripts with custom stimulus tags', () => {
         fs.writeFileSync(configFile, [
             'schema_version: "1.2"',

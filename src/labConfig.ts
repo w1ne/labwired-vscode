@@ -4,6 +4,7 @@
 // This software is released under the MIT License.
 // See the LICENSE file in the project root for full license information.
 
+import { assetFor } from './platformAssets';
 import * as path from 'path';
 import * as fs from 'fs';
 import * as crypto from 'crypto';
@@ -124,7 +125,7 @@ export function readLabConfig(file: string): LabConfig {
 
         const build = parseBuildBlock(file, adapter.build, 'debug.adapter.build');
         resolvedAdapter = {
-            executable: resolveProfilePath(file, adapter.executable),
+            executable: resolveProfilePath(file, expandPlatform(adapter.executable, process.platform, process.arch)),
             ...(build ? { build } : {}),
         };
     }
@@ -231,13 +232,28 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 export function resolveProfileExecutablePath(
     configFile: string,
     value: string,
-    platform = process.platform
+    platform: string = process.platform,
+    arch: string = process.arch
 ): string {
-    const resolvedPath = resolveProfilePath(configFile, value);
+    const resolvedPath = resolveProfilePath(configFile, expandPlatform(value, platform, arch));
     if (platform === 'win32' && path.extname(resolvedPath).length === 0 && fs.existsSync(`${resolvedPath}.exe`)) {
         return `${resolvedPath}.exe`;
     }
     return resolvedPath;
+}
+
+/**
+ * `${platform}` in a lab.yaml path becomes the platform name core releases
+ * use (linux-x86_64, darwin-aarch64, windows-x86_64, ...), so a repository
+ * can ship one bin/<platform>/ directory per OS behind a single lab.yaml.
+ */
+function expandPlatform(value: string, platform: string, arch: string): string {
+    if (!value.includes('${platform}')) return value;
+    const slug = assetFor(platform, arch);
+    if (!slug) {
+        throw new Error(`lab.yaml path '${value}' uses \${platform}, but LabWired publishes no binaries for ${platform}/${arch}.`);
+    }
+    return value.split('${platform}').join(slug);
 }
 
 function resolveProfilePath(configFile: string, value: string): string {

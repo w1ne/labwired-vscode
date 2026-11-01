@@ -190,6 +190,23 @@ extension only reads that one path). Stock auto-download is still `v0.25.0`;
 if your env script needs a newer public `labwired`, point `runner.executable`
 or `labwired.cliPath` at a tip build until a newer core CLI tag exists.
 
+### Prebuilt binaries for every OS
+
+A repository that ships its own runner and debug adapter can keep one
+`lab.yaml` for Linux, macOS and Windows. `${platform}` in `runner.executable`
+and `debug.adapter.executable` becomes the platform name core releases use
+(`linux-x86_64`, `linux-aarch64`, `darwin-aarch64`, `darwin-x86_64`,
+`windows-x86_64`), and `.exe` is added on Windows:
+
+```yaml
+build: false
+runner:
+  executable: ../bin/${platform}/labwired-pro
+debug:
+  adapter:
+    executable: ../bin/${platform}/labwired-pro-dap
+```
+
 ## Sign in (optional)
 
 Local simulation needs no account. Sign-in uses LabWired’s OAuth (Clerk-backed) at `api.labwired.com` for hosted features only.
