@@ -15,6 +15,7 @@ var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, ge
 };
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.deactivate = exports.activate = exports.LabwiredDebugAdapterDescriptorFactory = exports.LabwiredConfigurationProvider = exports.handleLabwiredDebugEvent = void 0;
+const testSummary_1 = require("./testSummary");
 const vscode = require("vscode");
 const path = require("path");
 const fs = require("fs");
@@ -756,10 +757,11 @@ function compileAndRun(context, outputChannel, simulatorManager) {
         }
         let exitCode;
         let result;
+        let runnerLog = '';
         let coreTestScriptPath;
         try {
             coreTestScriptPath = yield (0, labConfig_1.createCoreCompatibleTestScript)(labConfigPath);
-            ({ exitCode, result } = yield (0, cli_1.runTest)(cli, Object.assign(Object.assign({ script: coreTestScriptPath, cwd: rootPath, outputDir }, runOverrides), { apiKey: undefined }), outputChannel));
+            ({ exitCode, result, log: runnerLog } = yield (0, cli_1.runTest)(cli, Object.assign(Object.assign({ script: coreTestScriptPath, cwd: rootPath, outputDir }, runOverrides), { apiKey: undefined, quiet: true }), outputChannel));
         }
         catch (e) {
             // Resolving the binary is only half the Run button; this is the half
@@ -781,14 +783,31 @@ function compileAndRun(context, outputChannel, simulatorManager) {
                 }
             }
         }
-        outputChannel.show();
-        const status = result === null || result === void 0 ? void 0 : result.status;
-        const passed = status ? status === 'pass' || status === 'passed' : exitCode === 0;
+        const passed = (0, testSummary_1.testPassed)(result, exitCode);
+        const logPath = path.join(outputDir, 'runner.log');
+        try {
+            yield fs.promises.writeFile(logPath, runnerLog);
+        }
+        catch (error) {
+            outputChannel.appendLine(`LabWired: Failed to save the runner log: ${error}`);
+        }
+        for (const line of (0, testSummary_1.formatTestSummary)(result, exitCode)) {
+            outputChannel.appendLine(line);
+        }
         if (passed) {
-            vscode.window.showInformationMessage(`LabWired: Test passed (${status !== null && status !== void 0 ? status : `exit ${exitCode}`}).`);
+            outputChannel.appendLine(`Runner log: ${logPath}`);
         }
         else {
-            vscode.window.showErrorMessage(`LabWired: Test failed (${status !== null && status !== void 0 ? status : `exit ${exitCode}`}). See LabWired output.`);
+            outputChannel.appendLine('');
+            outputChannel.append(runnerLog);
+        }
+        outputChannel.show();
+        const summary = (0, testSummary_1.formatTestSummary)(result, exitCode)[0];
+        if (passed) {
+            vscode.window.showInformationMessage(`LabWired: ${summary}`);
+        }
+        else {
+            vscode.window.showErrorMessage(`LabWired: ${summary}. See LabWired output.`);
         }
     });
 }

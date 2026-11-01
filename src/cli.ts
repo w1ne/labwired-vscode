@@ -28,6 +28,8 @@ export const DAP_BIN = 'labwired-dap';
 export interface TestResult {
     exitCode: number;
     result: any | undefined;
+    /** Everything the runner printed, colour codes removed. */
+    log: string;
 }
 
 export interface RunTestOptions {
@@ -37,6 +39,8 @@ export interface RunTestOptions {
     firmware?: string;
     system?: string;
     apiKey?: string;
+    /** Keep the runner's output out of the channel; it is returned in `log`. */
+    quiet?: boolean;
 }
 
 function cliVersion(): string {
@@ -300,13 +304,21 @@ export async function runTest(
 
     const env = { ...process.env, NO_COLOR: '1', ...(opts.apiKey ? { LABWIRED_API_KEY: opts.apiKey } : {}) };
 
-    log(output, `Running: ${cli} ${args.join(' ')}`);
+    let runnerLog = `${cli} ${args.join(' ')}\n`;
+    if (!opts.quiet) {
+        log(output, `Running: ${cli} ${args.join(' ')}`);
+    }
 
     return new Promise<TestResult>((resolve, reject) => {
         const child = spawn(cli, args, { cwd: opts.cwd, env });
+        const collect = (data: Buffer) => {
+            const text = stripAnsi(data.toString());
+            runnerLog += text;
+            if (!opts.quiet) output.append(text);
+        };
 
-        child.stdout.on('data', (data: Buffer) => output.append(stripAnsi(data.toString())));
-        child.stderr.on('data', (data: Buffer) => output.append(stripAnsi(data.toString())));
+        child.stdout.on('data', collect);
+        child.stderr.on('data', collect);
 
         child.on('error', reject);
 
@@ -319,7 +331,7 @@ export async function runTest(
             } catch {
                 result = undefined;
             }
-            resolve({ exitCode, result });
+            resolve({ exitCode, result, log: runnerLog });
         });
     });
 }

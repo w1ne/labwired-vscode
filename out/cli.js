@@ -258,11 +258,20 @@ function runTest(cli, opts, output) {
             args.push('--system', opts.system);
         }
         const env = Object.assign(Object.assign(Object.assign({}, process.env), { NO_COLOR: '1' }), (opts.apiKey ? { LABWIRED_API_KEY: opts.apiKey } : {}));
-        log(output, `Running: ${cli} ${args.join(' ')}`);
+        let runnerLog = `${cli} ${args.join(' ')}\n`;
+        if (!opts.quiet) {
+            log(output, `Running: ${cli} ${args.join(' ')}`);
+        }
         return new Promise((resolve, reject) => {
             const child = (0, child_process_1.spawn)(cli, args, { cwd: opts.cwd, env });
-            child.stdout.on('data', (data) => output.append((0, ansi_1.stripAnsi)(data.toString())));
-            child.stderr.on('data', (data) => output.append((0, ansi_1.stripAnsi)(data.toString())));
+            const collect = (data) => {
+                const text = (0, ansi_1.stripAnsi)(data.toString());
+                runnerLog += text;
+                if (!opts.quiet)
+                    output.append(text);
+            };
+            child.stdout.on('data', collect);
+            child.stderr.on('data', collect);
             child.on('error', reject);
             child.on('close', (code) => {
                 const exitCode = code !== null && code !== void 0 ? code : -1;
@@ -274,7 +283,7 @@ function runTest(cli, opts, output) {
                 catch (_a) {
                     result = undefined;
                 }
-                resolve({ exitCode, result });
+                resolve({ exitCode, result, log: runnerLog });
             });
         });
     });

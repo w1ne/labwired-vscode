@@ -4,6 +4,7 @@
 // This software is released under the MIT License.
 // See the LICENSE file in the project root for full license information.
 
+import { formatTestSummary, testPassed } from './testSummary';
 import * as vscode from 'vscode';
 import * as path from 'path';
 import * as fs from 'fs';
@@ -857,15 +858,17 @@ async function compileAndRun(context: vscode.ExtensionContext, outputChannel: vs
     }
     let exitCode: number;
     let result: Awaited<ReturnType<typeof runTest>>['result'];
+    let runnerLog = '';
     let coreTestScriptPath: string | undefined;
     try {
         coreTestScriptPath = await createCoreCompatibleTestScript(labConfigPath);
-        ({ exitCode, result } = await runTest(cli, {
+        ({ exitCode, result, log: runnerLog } = await runTest(cli, {
             script: coreTestScriptPath,
             cwd: rootPath,
             outputDir,
             ...runOverrides,
             apiKey: undefined,
+            quiet: true,
         }, outputChannel));
     } catch (e) {
         // Resolving the binary is only half the Run button; this is the half
@@ -886,14 +889,29 @@ async function compileAndRun(context: vscode.ExtensionContext, outputChannel: vs
         }
     }
 
+    const passed = testPassed(result, exitCode);
+    const logPath = path.join(outputDir, 'runner.log');
+    try {
+        await fs.promises.writeFile(logPath, runnerLog);
+    } catch (error) {
+        outputChannel.appendLine(`LabWired: Failed to save the runner log: ${error}`);
+    }
+    for (const line of formatTestSummary(result, exitCode)) {
+        outputChannel.appendLine(line);
+    }
+    if (passed) {
+        outputChannel.appendLine(`Runner log: ${logPath}`);
+    } else {
+        outputChannel.appendLine('');
+        outputChannel.append(runnerLog);
+    }
     outputChannel.show();
 
-    const status = result?.status;
-    const passed = status ? status === 'pass' || status === 'passed' : exitCode === 0;
+    const summary = formatTestSummary(result, exitCode)[0];
     if (passed) {
-        vscode.window.showInformationMessage(`LabWired: Test passed (${status ?? `exit ${exitCode}`}).`);
+        vscode.window.showInformationMessage(`LabWired: ${summary}`);
     } else {
-        vscode.window.showErrorMessage(`LabWired: Test failed (${status ?? `exit ${exitCode}`}). See LabWired output.`);
+        vscode.window.showErrorMessage(`LabWired: ${summary}. See LabWired output.`);
     }
 }
 
