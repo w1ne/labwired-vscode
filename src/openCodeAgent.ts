@@ -24,11 +24,19 @@ export async function startOpenCodeAgent(output: vscode.OutputChannel): Promise<
     const configured = vscode.workspace
         .getConfiguration('labwired')
         .get<string>('agentPath');
-    let launcher = resolveLabwiredAgentLauncher(configured);
+    let launcher;
+    try {
+        launcher = await resolveLabwiredAgentLauncher(configured);
+    } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        output.appendLine(`LabWired [agent]: ${message}`);
+        await vscode.window.showErrorMessage(message);
+        return;
+    }
 
     if (!launcher) {
         const pick = await vscode.window.showInformationMessage(
-            'LabWired agent (OpenCode) is not installed. Install it the same way as the CLI tools path?',
+            'A working LabWired Agent launcher was not found. Install LabWired Agent?',
             'Install agent',
             'Copy install command',
             'Cancel'
@@ -59,14 +67,13 @@ export async function startOpenCodeAgent(output: vscode.OutputChannel): Promise<
     const term = vscode.window.createTerminal({
         name: 'LabWired OpenCode',
         cwd,
+        shellPath: launcher.executable,
+        shellArgs: launcher.args,
     });
     term.show(true);
-    const quoted =
-        process.platform === 'win32' ? `"${launcher}"` : `'${launcher.replace(/'/g, `'\\''`)}'`;
-    term.sendText(quoted, true);
-    output.appendLine(`LabWired [agent]: started OpenCode via ${launcher}`);
+    output.appendLine(`LabWired [agent]: started OpenCode via ${launcher.path}`);
     output.appendLine('  Same tools as Configure Agent Tools / playground: labwired_* MCP');
-    output.appendLine('  Hosted: labwired login (in another terminal) then restart agent if needed');
+    output.appendLine('  Hosted: labwired agent login (in another terminal) then restart agent if needed');
 }
 
 export async function copyAgentInstallCommand(): Promise<void> {

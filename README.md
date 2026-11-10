@@ -55,13 +55,18 @@ Same tools everywhere: `labwired_list`, `labwired_describe`, `labwired_compile`,
 
 **OpenCode agent** (same tools — like Embedder’s CLI, driven from the extension):
 
-- **LabWired: Start OpenCode Agent** — opens a terminal with `labwired` (installs if missing).
+- **LabWired: Start OpenCode Agent** — starts `labwired agent` through the
+  unified dispatcher, or a direct `labwired-agent` launcher. It identifies the
+  launcher before starting it, so a standalone Core `labwired` binary does not
+  hide a missing Agent installation. Set `labwired.agentPath` for a custom
+  installation. Windows `.cmd` installations use their companion PowerShell
+  script with separate arguments.
 - Or manually:
 
 ```bash
 curl -fsSL https://labwired.com/install | bash
-labwired login    # optional hosted MCP + model
-labwired          # OpenCode + skills + labwired_* tools
+labwired agent login    # optional hosted MCP + model
+labwired agent          # OpenCode + skills + labwired_* tools
 ```
 
 **Claude Code** (same MCP URL):

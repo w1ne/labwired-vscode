@@ -76,7 +76,7 @@
                 "labwired.agentPath": {
                     "type": "string",
                     "default": "",
-                    "description": "Path to the labwired agent launcher (OpenCode entry). Empty = auto-detect ~/.labwired/bin/labwired or PATH."
+                    "description": "Path to the direct labwired-agent launcher or unified labwired dispatcher. Empty = search LABWIRED_HOME, standard install directories, and PATH. The Core simulator is not an agent launcher."
                 }
             }
         },
