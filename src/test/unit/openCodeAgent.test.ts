@@ -86,7 +86,9 @@ describe('openCodeAgent — same tools runtime', function () {
         const pathKey = Object.keys(env).find((key) => key.toLowerCase() === 'path') ?? 'PATH';
         env[pathKey] = [first, second, env[pathKey]].join(path.delimiter);
         const launcher = await resolveLabwiredAgentLauncher(undefined, { ...opts, env });
-        assert.strictEqual(launcher?.path, dispatcher);
+        assert.ok(launcher);
+        // where.exe expands Windows 8.3 temp paths to their long spelling.
+        assert.strictEqual(fs.realpathSync.native(launcher.path), fs.realpathSync.native(dispatcher));
     });
 
     it('uses the official PowerShell script beside a Windows cmd shim', async function () {

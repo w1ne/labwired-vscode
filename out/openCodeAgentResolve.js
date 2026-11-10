@@ -53,7 +53,9 @@ function inspectLauncher(file, env) {
             return undefined;
         try {
             const { stdout } = yield execFileAsync(command.executable, [...command.args, '--help'], {
-                encoding: 'utf8', env, timeout: 2000, maxBuffer: 128 * 1024, windowsHide: true,
+                // Windows PowerShell can take more than two seconds to cold-start.
+                encoding: 'utf8', env, timeout: process.platform === 'win32' ? 5000 : 2000,
+                maxBuffer: 128 * 1024, windowsHide: true,
             });
             if (stdout.includes('labwired agent [command]') && stdout.includes('labwired core <command>')) {
                 return Object.assign(Object.assign({}, command), { args: [...command.args, 'agent'], kind: 'dispatcher' });
