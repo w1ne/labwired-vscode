@@ -81,3 +81,42 @@ jobs:
       - name: Run Windows extension tests
         if: runner.os == 'Windows'
         run: npm test
+
+  agent-contract:
+    name: Released Core and Agent dispatcher contract
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    runs-on: [self-hosted, Linux, X64]
+    permissions:
+      contents: read
+    defaults:
+      run:
+        working-directory: extension
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: extension
+      - uses: actions/checkout@v4
+        with:
+          repository: LabWired/agent
+          ref: 3bd99a38ad21008066fbcf9fc583bf91f22388f0
+          path: agent-contract
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: extension/package-lock.json
+      - run: npm ci
+      - run: npm run compile
+      - name: Check real released binaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          contract_dir="$(mktemp -d "${RUNNER_TEMP}/labwired-agent-contract.XXXXXX")"
+          trap 'rm -rf "$contract_dir"' EXIT
+          curl --fail --location --retry 2 \
+            https://github.com/w1ne/labwired-core/releases/download/v0.25.0/labwired-v0.25.0-linux-x86_64.tar.gz \
+            --output "$contract_dir/core.tar.gz"
+          printf '%s  %s\n' 3ccaa6219100fbd611521d6c823545521e664931f3293eae8144daaaa6bd6035 "$contract_dir/core.tar.gz" | sha256sum --check
+          tar -xzf "$contract_dir/core.tar.gz" -C "$contract_dir"
+          node scripts/verify-agent-launch.js "$contract_dir/labwired" "$GITHUB_WORKSPACE/agent-contract/bin/labwired"
