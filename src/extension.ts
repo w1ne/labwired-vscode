@@ -24,6 +24,7 @@ import { showModelConfigWizard } from './configWizard';
 import { resolveCli, resolveDap, runTest, CLI_BIN, DAP_BIN } from './cli';
 import { binarySourceOf } from './crashFingerprint';
 import { reportCrash } from './crashReport';
+import { reportUsage } from './usageReport';
 import { findLabConfig, readLabConfig, migrateLabConfig, resolveSystemConfigPath, LabDebugAdapter, createCoreCompatibleTestScript, runTestOverridesForLab } from './labConfig';
 import { detectProjectBuild } from './projectBuild';
 import { bestFirmware } from './firmware';
@@ -422,6 +423,7 @@ function activateInner(context: vscode.ExtensionContext) {
     const outputChannel = vscode.window.createOutputChannel("LabWired");
     context.subscriptions.push(outputChannel);
     outputChannel.appendLine("LabWired Activated.");
+    reportUsage('vscode_activated');
 
     // Optional LabWired sign-in (OAuth). Purely for HOSTED extras — running the
     // simulator locally is free and never requires this. Note: OAuth tokens here
@@ -515,11 +517,13 @@ function activateInner(context: vscode.ExtensionContext) {
     context.subscriptions.push(vscode.debug.onDidStartDebugSession((session) => {
         if (session.type === 'labwired') {
             simulatorManager.syncDebugSessionStatus(true);
+            reportUsage('vscode_debug_started');
         }
     }));
     context.subscriptions.push(vscode.debug.onDidTerminateDebugSession((session) => {
         if (session.type === 'labwired') {
             simulatorManager.syncDebugSessionStatus(false);
+            reportUsage('vscode_debug_ended');
         }
     }));
 
@@ -661,6 +665,21 @@ function activateInner(context: vscode.ExtensionContext) {
 
     const adapterFactory = new LabwiredDebugAdapterDescriptorFactory(context, outputChannel);
     context.subscriptions.push(vscode.debug.registerDebugAdapterDescriptorFactory('labwired', adapterFactory));
+    // A session can stop many times. Only the first REAL DAP stopped event
+    // proves this launch reached a usable debugger. Never count F5 clicks as success.
+    context.subscriptions.push(vscode.debug.registerDebugAdapterTrackerFactory('labwired', {
+        createDebugAdapterTracker: () => {
+            let readyReported = false;
+            return {
+                onDidSendMessage: (message: any) => {
+                    if (!readyReported && message?.type === 'event' && message.event === 'stopped') {
+                        readyReported = true;
+                        reportUsage('vscode_debug_ready');
+                    }
+                },
+            };
+        },
+    }));
 
     // Handle Telemetry and UI Sync
     const handleEvent = (e: DebugEventLike) => handleLabwiredDebugEvent(e, {
@@ -698,10 +717,12 @@ function activateInner(context: vscode.ExtensionContext) {
 
     // Register Compile and Run command
     context.subscriptions.push(vscode.commands.registerCommand('labwired.compileAndRun', async () => {
+        reportUsage('vscode_run_requested');
         try {
             commandCenterProvider.clearUartOutput();
             await compileAndRun(context, outputChannel, simulatorManager);
         } catch (e) {
+            reportUsage('vscode_run_failed');
             vscode.window.showErrorMessage(`LabWired: Compile and Run failed: ${e}`);
             outputChannel.appendLine(`ERROR: ${e}`);
         }

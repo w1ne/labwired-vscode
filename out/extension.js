@@ -35,6 +35,7 @@ const configWizard_1 = require("./configWizard");
 const cli_1 = require("./cli");
 const crashFingerprint_1 = require("./crashFingerprint");
 const crashReport_1 = require("./crashReport");
+const usageReport_1 = require("./usageReport");
 const labConfig_1 = require("./labConfig");
 const projectBuild_1 = require("./projectBuild");
 const firmware_1 = require("./firmware");
@@ -390,6 +391,7 @@ function activateInner(context) {
     const outputChannel = vscode.window.createOutputChannel("LabWired");
     context.subscriptions.push(outputChannel);
     outputChannel.appendLine("LabWired Activated.");
+    (0, usageReport_1.reportUsage)('vscode_activated');
     // Optional LabWired sign-in (OAuth). Purely for HOSTED extras — running the
     // simulator locally is free and never requires this. Note: OAuth tokens here
     // are Clerk JWTs, NOT `lwk_live_` CLI keys, so they are deliberately never
@@ -473,11 +475,13 @@ function activateInner(context) {
     context.subscriptions.push(vscode.debug.onDidStartDebugSession((session) => {
         if (session.type === 'labwired') {
             simulatorManager.syncDebugSessionStatus(true);
+            (0, usageReport_1.reportUsage)('vscode_debug_started');
         }
     }));
     context.subscriptions.push(vscode.debug.onDidTerminateDebugSession((session) => {
         if (session.type === 'labwired') {
             simulatorManager.syncDebugSessionStatus(false);
+            (0, usageReport_1.reportUsage)('vscode_debug_ended');
         }
     }));
     context.subscriptions.push(vscode.commands.registerCommand('labwired.startSimulator', () => __awaiter(this, void 0, void 0, function* () {
@@ -575,6 +579,21 @@ function activateInner(context) {
     context.subscriptions.push(vscode.debug.registerDebugConfigurationProvider('labwired', factory));
     const adapterFactory = new LabwiredDebugAdapterDescriptorFactory(context, outputChannel);
     context.subscriptions.push(vscode.debug.registerDebugAdapterDescriptorFactory('labwired', adapterFactory));
+    // A session can stop many times. Only the first REAL DAP stopped event
+    // proves this launch reached a usable debugger. Never count F5 clicks as success.
+    context.subscriptions.push(vscode.debug.registerDebugAdapterTrackerFactory('labwired', {
+        createDebugAdapterTracker: () => {
+            let readyReported = false;
+            return {
+                onDidSendMessage: (message) => {
+                    if (!readyReported && (message === null || message === void 0 ? void 0 : message.type) === 'event' && message.event === 'stopped') {
+                        readyReported = true;
+                        (0, usageReport_1.reportUsage)('vscode_debug_ready');
+                    }
+                },
+            };
+        },
+    }));
     // Handle Telemetry and UI Sync
     const handleEvent = (e) => handleLabwiredDebugEvent(e, {
         simulatorManager,
@@ -608,11 +627,13 @@ function activateInner(context) {
     }));
     // Register Compile and Run command
     context.subscriptions.push(vscode.commands.registerCommand('labwired.compileAndRun', () => __awaiter(this, void 0, void 0, function* () {
+        (0, usageReport_1.reportUsage)('vscode_run_requested');
         try {
             commandCenterProvider.clearUartOutput();
             yield compileAndRun(context, outputChannel, simulatorManager);
         }
         catch (e) {
+            (0, usageReport_1.reportUsage)('vscode_run_failed');
             vscode.window.showErrorMessage(`LabWired: Compile and Run failed: ${e}`);
             outputChannel.appendLine(`ERROR: ${e}`);
         }

@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.15.4
+
+- Opt-out-respecting anonymous workflow telemetry for VS Code: active editor
+  sessions, debugger started/ready/ended, and Run requests/failures.
+- Separate fixed event vocabulary from browser product analytics; no persistent
+  user or installation identifiers, source code, paths, or prompts are sent.
+- CI sends no telemetry by default; debugger success is recorded only after a
+  real DAP stop-at-entry/step event, not merely after clicking F5.
+
+
 ## 0.15.3
 
 - Default simulator/debug adapter updated to published LabWired core v0.26.0.
