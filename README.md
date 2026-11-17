@@ -74,6 +74,19 @@ Palette: **Copy Claude MCP Install Command** / **Copy Agent Install Command**.
 
 Local debug and **Run Test (lab.yaml)** stay free and do not require sign-in.
 
+### Anonymous usage measurement
+
+With VS Code telemetry and `labwired.telemetry.enabled` enabled, the extension
+reports only fixed editor events: activation, first active debug/Run action per
+editor-host UTC day, debugger started/ready/ended, and Run requests/failures.
+Each event carries a **temporary process-local random token**, never a user,
+device, workspace, file path, firmware, source code, prompt, or error message.
+Turning off VS Code telemetry or setting `labwired.telemetry.enabled: false`,
+`DO_NOT_TRACK`, or `LABWIRED_TELEMETRY=0` disables reporting. CI is off
+by default. These metrics are **active editor-host sessions, not unique users**;
+Marketplace installs and Open VSX downloads remain separate counts.
+
+
 ## What you get
 
 | | |
