@@ -39,8 +39,10 @@ jobs:
       - name: Unit tests
         run: npm run test:unit
 
-      - name: Extension host tests
-        run: xvfb-run -a npm test
+      - name: Extension host + published runtime debugger release gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/test-published-dap.sh
 
       # A tag that disagrees with package.json produces a Marketplace listing
       # whose version does not match the source it claims to come from.

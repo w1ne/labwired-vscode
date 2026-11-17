@@ -12,7 +12,7 @@ exports.PLATFORM_ASSETS = {
     'darwin/x64': 'darwin-x86_64',
     'linux/x64': 'linux-x86_64',
     'linux/arm64': 'linux-aarch64',
-    // The v0.25.0 runtime publishes Windows x64. Extraction uses `tar`, which
+    // The v0.26.0 runtime publishes Windows x64. Extraction uses `tar`, which
     // ships with Windows 10 and later, and binaryName() appends the .exe.
     'win32/x64': 'windows-x86_64',
 };

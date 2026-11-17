@@ -16,3 +16,7 @@ node_modules/mocha/**
 node_modules/glob/**
 node_modules/typescript/**
 out/test/**
+
+# CI fixtures and QA scripts do not belong in a user installation.
+test/**
+scripts/**

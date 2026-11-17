@@ -16,7 +16,7 @@ import { setBinarySource, type BinarySource } from './crashFingerprint';
 // The core release this extension downloads. Kept at the newest release on
 // purpose: pinning two releases back is how the debugger shipped against a CLI
 // that predated half the boards in the docs.
-export const CLI_VERSION = 'v0.25.0';
+export const CLI_VERSION = 'v0.26.0';
 
 /** The simulator/test-runner CLI. */
 export const CLI_BIN = 'labwired';
@@ -52,9 +52,10 @@ function binName(bin: string): string {
     return process.platform === 'win32' ? `${bin}.exe` : bin;
 }
 
-// Cache of resolved binary paths, keyed by bare binary name, for the lifetime
-// of the extension host.
-const cachedPaths = new Map<string, string>();
+// Do not cache resolved paths by binary name here. The user can change
+// labwired.cliVersion or clear a configured path while VS Code stays open.
+// A name-only cache silently keeps running the old binary in both cases.
+// The per-version release directory under globalStorage is the durable cache.
 
 // Where each resolved binary came from is recorded in crashFingerprint.ts:
 // a crash report that says only "the simulator failed" cannot separate a
@@ -212,13 +213,7 @@ async function resolveBinary(
         return configured.trim();
     }
 
-    const cached = cachedPaths.get(bin);
-    if (cached && existsFile(cached)) {
-        return cached;
-    }
-
     const remember = (p: string, source: BinarySource): string => {
-        cachedPaths.set(bin, p);
         setBinarySource(bin, source);
         return p;
     };
