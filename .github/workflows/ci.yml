@@ -81,3 +81,19 @@ jobs:
       - name: Run Windows extension tests
         if: runner.os == 'Windows'
         run: npm test
+
+  real-dap:
+    name: Published firmware + real DAP + cold install (Linux)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+      - name: Real firmware and debugger release gate
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: bash scripts/test-published-dap.sh

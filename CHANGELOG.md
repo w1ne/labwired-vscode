@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.15.3
+
+- Default simulator/debug adapter updated to published LabWired core v0.26.0.
+- Fixed stale debug adapter/CLI selection: changing the configured path or
+  runtime version while VS Code is open no longer reuses an old binary.
+- Added release-blocking, real Cortex-M debugging checks: stack/PC, registers,
+  SRAM reads, instruction step, reverse step, and cold runtime download.
+- The same published-runtime gate runs before Marketplace/Open VSX publication.
+
+
 ## 0.15.2
 
 - **`${platform}`** in `runner.executable` and `debug.adapter.executable`

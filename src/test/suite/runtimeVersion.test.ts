@@ -4,13 +4,13 @@ import * as path from 'path';
 import { CLI_VERSION } from '../../cli';
 
 suite('LabWired runtime default', () => {
-    test('manifest and CLI use the published v0.25.0 runtime by default', () => {
+    test('manifest and CLI use the published v0.26.0 runtime by default', () => {
         const manifestPath = path.resolve(__dirname, '../../../package.json');
         const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf8'));
         const manifestVersion = manifest.contributes.configuration.properties['labwired.cliVersion'].default;
 
-        assert.strictEqual(manifestVersion, 'v0.25.0');
-        assert.strictEqual(CLI_VERSION, 'v0.25.0');
+        assert.strictEqual(manifestVersion, 'v0.26.0');
+        assert.strictEqual(CLI_VERSION, 'v0.26.0');
         assert.strictEqual(manifestVersion, CLI_VERSION);
     });
 

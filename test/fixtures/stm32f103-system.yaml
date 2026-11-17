@@ -1,0 +1,3 @@
+# End-to-end debug fixture: the published LabWired runtime includes this chip.
+name: labwired-vscode-e2e
+chip: stm32f103

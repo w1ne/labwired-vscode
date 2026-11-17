@@ -1,7 +1,7 @@
 {
     "name": "labwired-vscode",
     "displayName": "LabWired",
-    "version": "0.15.2",
+    "version": "0.15.3",
     "license": "MIT",
     "publisher": "w1ne",
     "description": "Debug firmware on a virtual chip (breakpoints, registers, reverse step) and connect shared LabWired agent tools (MCP) for compile / run / verify.",
@@ -70,7 +70,7 @@
                 },
                 "labwired.cliVersion": {
                     "type": "string",
-                    "default": "v0.25.0",
+                    "default": "v0.26.0",
                     "description": "LabWired release tag the extension downloads. The tarball carries both the labwired CLI and the labwired-dap debug adapter (from v0.19.3 onward)."
                 },
                 "labwired.agentPath": {
@@ -237,7 +237,7 @@
             },
             {
                 "command": "labwired.configureProject",
-                "title": "Configure Project\u2026",
+                "title": "Configure Project…",
                 "icon": "$(gear)",
                 "category": "LabWired"
             },
